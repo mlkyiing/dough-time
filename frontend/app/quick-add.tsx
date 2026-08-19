@@ -10,11 +10,12 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { colors, radius, shadow, spacing } from "@/src/theme";
 import { addTransaction, getAccounts, getWageSettings } from "@/src/store";
 import { Account, WageSettings } from "@/src/types";
-import { CATEGORIES, categoryMeta } from "@/src/constants";
+import { CATEGORIES } from "@/src/constants";
 import {
   amountToWorkHours,
   formatTimeCost,
@@ -69,7 +70,6 @@ export default function QuickAddModal() {
     if (amountStr === "0") {
       setAmountStr(val);
     } else {
-      // limit max digits after decimal to 2
       const parts = amountStr.split(".");
       if (parts.length > 1 && parts[1].length >= 2) return;
       setAmountStr(amountStr + val);
@@ -109,8 +109,14 @@ export default function QuickAddModal() {
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Quick Add Expense</Text>
-        <Pressable onPress={() => router.back()} testID="close-quick-add">
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <Image
+            source={require("@/assets/mascot.jpg")}
+            style={{ width: 32, height: 32, borderRadius: 16 }}
+          />
+          <Text style={styles.title}>Quick Add Expense</Text>
+        </View>
+        <Pressable onPress={() => router.back()} testID="close-quick-add" hitSlop={8}>
           <Ionicons name="close-circle-outline" size={28} color={colors.onSurfaceSecondary} />
         </Pressable>
       </View>
@@ -124,10 +130,16 @@ export default function QuickAddModal() {
 
         {/* Live Money -> Work Time Conversion Pill */}
         <View style={[styles.timeConverterPill, { borderColor: reaction.color }]}>
-          <Text style={{ fontSize: 20 }}>{reaction.emoji}</Text>
+          <View style={styles.mascotSmallWrap}>
+            <Image
+              source={require("@/assets/mascot_coin.jpg")}
+              style={{ width: 36, height: 36 }}
+              contentFit="contain"
+            />
+          </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.timeConverterTitle}>
-              Costs <Text style={{ color: colors.brandPrimary, fontFamily: "Nunito_800ExtraBold" }}>{timeFormatted}</Text> of your work
+              Costs <Text style={{ color: colors.brandPrimary, fontWeight: "800" }}>{timeFormatted}</Text> of your life
             </Text>
             <Text style={styles.timeConverterDesc}>
               {reaction.desc} (at RM {wage.hourlyRate.toFixed(2)}/hr)
@@ -189,7 +201,7 @@ export default function QuickAddModal() {
             testID="merchant-input"
             value={merchant}
             onChangeText={setMerchant}
-            placeholder="Merchant (e.g. Tealive, Petronas)"
+            placeholder="Merchant (e.g. Tealive, Gigi Coffee)"
             placeholderTextColor={colors.onSurfaceSecondary}
             style={styles.input}
           />
@@ -210,7 +222,7 @@ export default function QuickAddModal() {
               key={k}
               testID={`keypad-${k}`}
               onPress={() => handleKeyPress(k)}
-              style={styles.key}
+              style={({ pressed }) => [styles.key, pressed && { backgroundColor: colors.borderStrong }]}
             >
               {k === "DEL" ? (
                 <Ionicons name="backspace-outline" size={24} color={colors.onSurface} />
@@ -244,96 +256,146 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-  title: { fontFamily: "Nunito_800ExtraBold", fontSize: 22, color: colors.onSurface },
+  title: {
+    fontWeight: "800",
+    fontSize: 20,
+    color: colors.onSurface,
+    letterSpacing: -0.3,
+  },
   scrollContent: { paddingHorizontal: spacing.lg, paddingBottom: 40 },
   amountBox: {
     flexDirection: "row",
     alignItems: "baseline",
     justifyContent: "center",
-    marginTop: spacing.sm,
-    marginBottom: spacing.xs,
+    marginVertical: spacing.md,
     gap: 6,
   },
-  currencySymbol: { fontFamily: "Nunito_700Bold", fontSize: 24, color: colors.brandPrimary },
-  amountText: { fontFamily: "Nunito_800ExtraBold", fontSize: 48, color: colors.onSurface },
+  currencySymbol: {
+    fontWeight: "700",
+    fontSize: 22,
+    color: colors.onSurfaceSecondary,
+  },
+  amountText: {
+    fontWeight: "800",
+    fontSize: 44,
+    color: colors.onSurface,
+    letterSpacing: -0.8,
+  },
   timeConverterPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 12,
     backgroundColor: colors.surfaceSecondary,
     borderWidth: 1.5,
     borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 10,
-    marginVertical: spacing.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
     ...shadow.soft,
   },
+  mascotSmallWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.pink,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   timeConverterTitle: {
-    fontFamily: "Nunito_700Bold",
-    fontSize: 13,
+    fontWeight: "700",
+    fontSize: 14,
     color: colors.onSurface,
   },
   timeConverterDesc: {
-    fontFamily: "Nunito_600SemiBold",
+    fontWeight: "500",
     fontSize: 11,
     color: colors.onSurfaceSecondary,
-    marginTop: 1,
+    marginTop: 2,
   },
-  sectionLabel: { fontFamily: "Nunito_700Bold", fontSize: 13, color: colors.onSurfaceSecondary, marginBottom: 8 },
-  pillRow: { flexDirection: "row", gap: 8 },
+  sectionLabel: {
+    fontWeight: "700",
+    fontSize: 12,
+    color: colors.onSurfaceSecondary,
+    marginBottom: spacing.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  pillRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingVertical: 4,
+  },
   pill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: radius.pill,
     backgroundColor: colors.surfaceSecondary,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
   },
   pillSelected: {
     backgroundColor: colors.brandPrimary,
     borderColor: colors.brandPrimary,
   },
-  pillText: { fontFamily: "Nunito_600SemiBold", fontSize: 13, color: colors.onSurface },
-  pillTextSelected: { color: colors.onBrandPrimary, fontFamily: "Nunito_700Bold" },
-  inputsRow: { gap: 8, marginBottom: spacing.lg },
+  pillText: {
+    fontWeight: "700",
+    fontSize: 12,
+    color: colors.onSurface,
+  },
+  pillTextSelected: {
+    color: colors.onBrandPrimary,
+  },
+  inputsRow: {
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
   input: {
     backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
-    paddingVertical: 12,
-    fontFamily: "Nunito_600SemiBold",
+    paddingVertical: 10,
+    fontWeight: "600",
     fontSize: 14,
     color: colors.onSurface,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   keypad: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    gap: 10,
-    marginBottom: spacing.xl,
+    gap: 8,
+    marginVertical: spacing.md,
   },
   key: {
-    width: "30%",
-    height: 52,
+    width: "31%",
+    aspectRatio: 2,
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
     ...shadow.soft,
   },
-  keyText: { fontFamily: "Nunito_800ExtraBold", fontSize: 22, color: colors.onSurface },
+  keyText: {
+    fontWeight: "700",
+    fontSize: 22,
+    color: colors.onSurface,
+  },
   saveBtn: {
     backgroundColor: colors.brandPrimary,
-    paddingVertical: 16,
     borderRadius: radius.pill,
+    paddingVertical: 14,
     alignItems: "center",
-    justifyContent: "center",
-    ...shadow.card,
+    marginTop: spacing.sm,
+    ...shadow.glow,
   },
-  saveBtnText: { color: colors.onBrandPrimary, fontFamily: "Nunito_800ExtraBold", fontSize: 16 },
+  saveBtnText: {
+    color: colors.onBrandPrimary,
+    fontWeight: "800",
+    fontSize: 16,
+  },
 });

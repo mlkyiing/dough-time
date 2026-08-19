@@ -1,7 +1,7 @@
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
-import { LogBox, View } from "react-native";
+import { LogBox, Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { useAppFonts } from "@/src/hooks/use-app-fonts";
@@ -18,6 +18,34 @@ export default function RootLayout() {
   useEffect(() => {
     if (ready) SplashScreen.hideAsync();
   }, [ready]);
+
+  useEffect(() => {
+    if (Platform.OS === "web" && typeof document !== "undefined") {
+      const styleId = "doughtime-global-ios-styles";
+      if (!document.getElementById(styleId)) {
+        const style = document.createElement("style");
+        style.id = styleId;
+        style.textContent = `
+          * {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Rounded", "SF Pro Text", "Nunito", -system-ui, sans-serif !important;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            box-sizing: border-box;
+          }
+          input, textarea {
+            user-select: auto;
+          }
+          body, html {
+            background-color: ${colors.surface};
+            overscroll-behavior-y: none;
+          }
+        `;
+        document.head.appendChild(style);
+      }
+    }
+  }, []);
 
   if (!ready) return null;
 

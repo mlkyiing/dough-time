@@ -11,17 +11,14 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { colors, radius, shadow, spacing } from "@/src/theme";
 import { deleteTransaction, getAccounts, getTransactions, getWageSettings } from "@/src/store";
 import { Account, Transaction, WageSettings } from "@/src/types";
-import { CATEGORIES, categoryMeta } from "@/src/constants";
-import {
-  amountToWorkHours,
-  formatTimeCost,
-  rm,
-  shortDate,
-} from "@/src/format";
+import { CATEGORIES } from "@/src/constants";
+import { amountToWorkHours, rm } from "@/src/format";
+import { SwipeableTxnRow } from "@/src/components/SwipeableTxnRow";
 
 export default function Transactions() {
   const router = useRouter();
@@ -87,8 +84,8 @@ export default function Transactions() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>History & Life Energy</Text>
+        <View style={{ gap: 2 }}>
+          <Text style={styles.title}>Activity & Life Time</Text>
           <Text style={styles.subtitle}>
             {viewMode === "money"
               ? `Total ${rm(totalExpense)}`
@@ -125,15 +122,18 @@ export default function Transactions() {
 
           <Pressable
             testID="add-txn-btn"
-            style={styles.iconBtn}
-            onPress={() => router.push("/quick-add")}
+            style={({ pressed }) => [styles.iconBtn, pressed && { transform: [{ scale: 0.95 }] }]}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              router.push("/quick-add");
+            }}
           >
             <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
           </Pressable>
         </View>
       </View>
 
-      {/* Chips row */}
+      {/* Category Filter Chips */}
       <View style={styles.chipsWrap}>
         <ScrollView
           horizontal
@@ -172,52 +172,34 @@ export default function Transactions() {
         </ScrollView>
       </View>
 
-      {/* List */}
+      {/* Transactions List with Swipe to Delete */}
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: 140 }}
+        contentContainerStyle={{ padding: spacing.lg, paddingBottom: 130 }}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyBox}>
-            <Text style={{ fontSize: 40, marginBottom: 8 }}>🧋</Text>
+            <Image
+              source={require("@/assets/mascot_coin.jpg")}
+              style={{ width: 90, height: 90, marginBottom: 12 }}
+              contentFit="contain"
+            />
             <Text style={styles.emptyTitle}>No transactions found</Text>
             <Text style={styles.emptySubtitle}>Tap + to log an expense or scan a receipt!</Text>
           </View>
         }
         renderItem={({ item }) => {
-          const meta = categoryMeta(item.category);
           const acc = accounts.find((a) => a.id === item.accountId);
-          const timeCost = formatTimeCost(item.amount, wage.hourlyRate);
-
           return (
-            <Pressable
-              testID={`txn-${item.id}`}
-              onLongPress={() => handleDelete(item.id)}
-              style={styles.card}
-            >
-              <View style={[styles.iconBox, { backgroundColor: meta.tint }]}>
-                <Text style={{ fontSize: 20 }}>{meta.emoji}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>{item.merchant || item.category}</Text>
-                <Text style={styles.cardSub}>
-                  {shortDate(item.date)} · {acc?.name || "—"}
-                  {item.note ? ` · ${item.note}` : ""}
-                </Text>
-              </View>
-
-              <View style={{ alignItems: "flex-end" }}>
-                <Text style={styles.cardAmt}>
-                  {viewMode === "money" ? rm(item.amount) : timeCost}
-                </Text>
-                <View style={styles.timePill}>
-                  <Text style={styles.timePillText}>
-                    {viewMode === "money" ? `⏱️ ${timeCost}` : rm(item.amount)}
-                  </Text>
-                </View>
-              </View>
-            </Pressable>
+            <SwipeableTxnRow
+              key={item.id}
+              transaction={item}
+              account={acc}
+              hourlyRate={wage.hourlyRate}
+              viewMode={viewMode}
+              onDelete={handleDelete}
+            />
           );
         }}
       />
@@ -234,13 +216,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-  title: { fontFamily: "Nunito_800ExtraBold", fontSize: 24, color: colors.onSurface },
-  subtitle: { fontFamily: "Nunito_600SemiBold", color: colors.onSurfaceSecondary, fontSize: 13, marginTop: 2 },
+  title: {
+    fontWeight: "800",
+    fontSize: 22,
+    color: colors.onSurface,
+    letterSpacing: -0.4,
+  },
+  subtitle: {
+    fontWeight: "600",
+    color: colors.onSurfaceSecondary,
+    fontSize: 13,
+    marginTop: 2,
+  },
   toggleWrap: {
     flexDirection: "row",
-    backgroundColor: colors.surfaceSecondary,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: "#F1F5F9",
     borderRadius: radius.pill,
     padding: 3,
   },
@@ -251,9 +241,10 @@ const styles = StyleSheet.create({
   },
   toggleBtnActive: {
     backgroundColor: colors.brandPrimary,
+    ...shadow.soft,
   },
   toggleText: {
-    fontFamily: "Nunito_700Bold",
+    fontWeight: "700",
     fontSize: 11,
     color: colors.onSurfaceSecondary,
   },
@@ -262,12 +253,12 @@ const styles = StyleSheet.create({
   },
   iconBtn: {
     backgroundColor: colors.brandPrimary,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: "center",
     justifyContent: "center",
-    ...shadow.soft,
+    ...shadow.glow,
   },
   chipsWrap: { paddingBottom: spacing.sm },
   chip: {
@@ -276,38 +267,28 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     borderWidth: 1,
   },
-  chipText: { fontFamily: "Nunito_700Bold", fontSize: 12 },
-  card: {
-    flexDirection: "row",
+  chipText: {
+    fontWeight: "700",
+    fontSize: 12,
+  },
+  emptyBox: {
     alignItems: "center",
-    gap: spacing.md,
+    paddingVertical: spacing.xxxl,
     backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
-    ...shadow.soft,
+    marginTop: spacing.md,
   },
-  iconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.sm,
-    alignItems: "center",
-    justifyContent: "center",
+  emptyTitle: {
+    fontWeight: "800",
+    fontSize: 16,
+    color: colors.onSurface,
   },
-  cardTitle: { fontFamily: "Nunito_700Bold", fontSize: 15, color: colors.onSurface },
-  cardSub: { fontFamily: "Nunito_400Regular", fontSize: 12, color: colors.onSurfaceSecondary, marginTop: 2 },
-  cardAmt: { fontFamily: "Nunito_800ExtraBold", fontSize: 15, color: colors.onSurface },
-  timePill: {
-    backgroundColor: colors.surfaceTertiary,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radius.pill,
-    marginTop: 3,
+  emptySubtitle: {
+    fontWeight: "400",
+    fontSize: 13,
+    color: colors.onSurfaceSecondary,
+    marginTop: 4,
   },
-  timePillText: { fontFamily: "Nunito_700Bold", fontSize: 10, color: colors.brandPrimary },
-  emptyBox: { alignItems: "center", paddingVertical: spacing.xxl },
-  emptyTitle: { fontFamily: "Nunito_800ExtraBold", fontSize: 16, color: colors.onSurface },
-  emptySubtitle: { fontFamily: "Nunito_400Regular", fontSize: 13, color: colors.onSurfaceSecondary, marginTop: 4 },
 });

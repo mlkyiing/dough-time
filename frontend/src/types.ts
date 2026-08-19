@@ -1,15 +1,26 @@
+export type AccountType =
+  | "ewallet"
+  | "bank"
+  | "cash"
+  | "credit_card"
+  | "fd"
+  | "loan"
+  | "investment";
+
 export type Account = {
   id: string;
   name: string;
-  type: "ewallet" | "bank" | "cash";
+  type: AccountType;
   emoji: string;
   color: string;
-  balance: number;
+  balance: number; // For assets: balance. For liabilities (credit card / loan): amount owed.
+  creditLimit?: number; // Optional limit for credit cards
+  interestRate?: number; // Optional APY for FD or APR for Loans
 };
 
 export type Transaction = {
   id: string;
-  amount: number; // positive = expense, negative = income
+  amount: number; // positive = expense, negative = income / repayment
   category: string;
   accountId: string;
   note?: string;
@@ -25,3 +36,22 @@ export type WageSettings = {
   hourlyRate: number; // e.g. ~26.00
   currency: string;
 };
+
+export type CategoryBudget = {
+  category: string;
+  monthlyLimit: number;
+};
+
+export type BudgetSettings = {
+  monthlyOverallLimit: number; // e.g. RM 2000
+  categoryBudgets: CategoryBudget[];
+  enabled: boolean;
+};
+
+export function isLiabilityAccount(type: AccountType): boolean {
+  return type === "credit_card" || type === "loan";
+}
+
+export function isAssetAccount(type: AccountType): boolean {
+  return !isLiabilityAccount(type);
+}

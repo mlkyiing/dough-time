@@ -1,18 +1,19 @@
 import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Platform, Pressable, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { colors, radius, shadow } from "@/src/theme";
 
-function CenterFab({ onPress }: { onPress: () => void }) {
+function CenterFab({ onPress, bottomInset }: { onPress: () => void; bottomInset: number }) {
   return (
-    <View pointerEvents="box-none" style={styles.fabWrap}>
+    <View pointerEvents="box-none" style={[styles.fabWrap, { bottom: 28 + Math.max(bottomInset, 10) }]}>
       <Pressable
         testID="quick-add-fab"
         onPress={onPress}
-        style={({ pressed }) => [styles.fab, pressed && { transform: [{ scale: 0.95 }] }]}
+        style={({ pressed }) => [styles.fab, pressed && { transform: [{ scale: 0.94 }] }]}
       >
-        <Ionicons name="add" size={30} color={colors.onBrandPrimary} />
+        <Ionicons name="add" size={28} color={colors.onBrandPrimary} />
       </Pressable>
     </View>
   );
@@ -20,16 +21,24 @@ function CenterFab({ onPress }: { onPress: () => void }) {
 
 export default function TabsLayout() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const bottomOffset = Math.max(insets.bottom, 12);
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <Tabs
         screenOptions={{
           headerShown: false,
           tabBarActiveTintColor: colors.brandPrimary,
           tabBarInactiveTintColor: colors.onSurfaceSecondary,
-          tabBarStyle: styles.tabBar,
+          tabBarStyle: [
+            styles.tabBar,
+            {
+              bottom: bottomOffset,
+            },
+          ],
           tabBarLabelStyle: styles.tabLabel,
+          tabBarItemStyle: styles.tabItem,
         }}
       >
         <Tabs.Screen
@@ -54,7 +63,7 @@ export default function TabsLayout() {
           name="_center"
           options={{
             title: "",
-            tabBarButton: () => <View style={{ width: 60 }} />,
+            tabBarButton: () => <View style={{ width: 56 }} />,
           }}
         />
         <Tabs.Screen
@@ -77,6 +86,7 @@ export default function TabsLayout() {
         />
       </Tabs>
       <CenterFab
+        bottomInset={bottomOffset}
         onPress={() => {
           Haptics.selectionAsync().catch(() => {});
           router.push("/quick-add");
@@ -89,42 +99,41 @@ export default function TabsLayout() {
 const styles = StyleSheet.create({
   tabBar: {
     position: "absolute",
-    left: 16,
-    right: 16,
-    bottom: 16,
-    height: 66,
+    left: 20,
+    right: 20,
+    height: 64,
     borderRadius: radius.pill,
     backgroundColor: colors.surfaceSecondary,
     borderTopWidth: 0,
     borderWidth: 1,
-    borderColor: colors.border,
-    paddingBottom: 8,
-    paddingTop: 6,
+    borderColor: colors.borderStrong,
+    paddingBottom: Platform.OS === "ios" ? 4 : 8,
+    paddingTop: 8,
     ...shadow.card,
   },
+  tabItem: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
   tabLabel: {
-    fontFamily: "Nunito_600SemiBold",
-    fontSize: 11,
+    fontWeight: "700",
+    fontSize: 10,
     marginTop: 2,
   },
   fabWrap: {
     position: "absolute",
-    bottom: 40,
     left: 0,
     right: 0,
     alignItems: "center",
+    zIndex: 99,
   },
   fab: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: colors.brandPrimary,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: colors.brandPrimary,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 6,
+    ...shadow.glow,
   },
 });

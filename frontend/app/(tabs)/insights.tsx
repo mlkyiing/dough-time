@@ -13,9 +13,9 @@ import { PieChart } from "react-native-gifted-charts";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { colors, radius, shadow, spacing } from "@/src/theme";
-import { getTransactions, getWageSettings } from "@/src/store";
-import { Transaction, WageSettings } from "@/src/types";
-import { CATEGORIES, categoryMeta, getBackendUrl } from "@/src/constants";
+import { getBudgetSettings, getTransactions, getWageSettings } from "@/src/store";
+import { BudgetSettings, Transaction, WageSettings } from "@/src/types";
+import { categoryMeta, getBackendUrl } from "@/src/constants";
 import {
   amountToWorkHours,
   formatTimeCost,
@@ -26,9 +26,9 @@ import {
 } from "@/src/format";
 
 const PIE_PALETTE = [
-  "#F472B6", "#D8B4FE", "#6EE7B7", "#FBBF24", "#FB7185",
-  "#93C5FD", "#FCA5A5", "#A7F3D0", "#FDE68A", "#DDD6FE",
-  "#F9A8D4", "#86EFAC",
+  "#EC4899", "#D8B4FE", "#34D399", "#F59E0B", "#F87171",
+  "#60A5FA", "#FB7185", "#A7F3D0", "#FDE68A", "#DDD6FE",
+  "#F472B6", "#86EFAC",
 ];
 
 export default function Insights() {
@@ -40,14 +40,25 @@ export default function Insights() {
     hourlyRate: 25.96,
     currency: "RM",
   });
+  const [budget, setBudget] = useState<BudgetSettings>({
+    monthlyOverallLimit: 2000,
+    enabled: true,
+    categoryBudgets: [
+      { category: "Makan", monthlyLimit: 600 },
+      { category: "Groceries", monthlyLimit: 400 },
+      { category: "Petrol", monthlyLimit: 250 },
+      { category: "Shopping", monthlyLimit: 300 },
+    ],
+  });
   const [loading, setLoading] = useState(false);
   const [insight, setInsight] = useState<{ summary: string; tips: string[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [t, w] = await Promise.all([getTransactions(), getWageSettings()]);
+    const [t, w, b] = await Promise.all([getTransactions(), getWageSettings(), getBudgetSettings()]);
     setTxns(t);
     setWage(w);
+    setBudget(b);
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -81,8 +92,8 @@ export default function Insights() {
   const fetchInsights = useCallback(async () => {
     if (monthTxns.length === 0) {
       setInsight({
-        summary: "No expenses logged this month yet. Log a few transactions and Boba Hourglass will calculate your life energy score! 🧋",
-        tips: ["Set a monthly work-hours spending ceiling.", "Track daily kopi & snacks to avoid time-leaks."],
+        summary: "No expenses logged this month yet. Log a few transactions and DoughTime will calculate your life energy score! 🥟⏳",
+        tips: ["Set a monthly work-hours spending ceiling.", "Track daily kopi & snacks to avoid life-time leaks."],
       });
       return;
     }
@@ -117,24 +128,27 @@ export default function Insights() {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: 140 }}
+        contentContainerStyle={{ padding: spacing.lg, paddingBottom: 130 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Title */}
-        <Text style={styles.title}>Spending Vibes & Time</Text>
-        <Text style={styles.subtitle}>
-          This month · {rm(total)} ({totalWorkHours.toFixed(1)} hrs of work)
-        </Text>
+        {/* Header */}
+        <View style={{ marginBottom: spacing.md }}>
+          <Text style={styles.title}>Spending Vibes & Budget</Text>
+          <Text style={styles.subtitle}>
+            This month · {rm(total)} ({totalWorkHours.toFixed(1)} hrs of work)
+          </Text>
+        </View>
 
         {byCat.length === 0 ? (
           <View style={styles.emptyBox}>
             <Image
-              source={require("@/assets/mascot.jpg")}
+              source={require("@/assets/mascot_coin.jpg")}
               style={styles.emptyImg}
-              contentFit="cover"
+              contentFit="contain"
             />
+            <Text style={styles.emptyTitle}>Your Mascot is Waiting!</Text>
             <Text style={styles.emptyText}>
-              Log expenses to see your DoughTime spending personality! 🧋⌛
+              Log expenses to see your DoughTime spending personality and life energy score.
             </Text>
           </View>
         ) : (
@@ -144,7 +158,7 @@ export default function Insights() {
               <PieChart
                 data={pieData}
                 donut
-                radius={90}
+                radius={85}
                 innerRadius={55}
                 innerCircleColor={colors.surfaceSecondary}
                 centerLabelComponent={() => (
@@ -155,7 +169,7 @@ export default function Insights() {
                 )}
               />
 
-              <View style={{ gap: 8, marginTop: spacing.lg, width: "100%" }}>
+              <View style={{ gap: 10, marginTop: spacing.lg, width: "100%" }}>
                 {byCat.slice(0, 5).map((c, i) => {
                   const meta = categoryMeta(c.key);
                   const catHours = formatTimeCost(c.value, wage.hourlyRate);
@@ -173,8 +187,53 @@ export default function Insights() {
               </View>
             </View>
 
-            {/* AI Coach with Boba Mascot Avatar */}
+            {/* Category Budget Tracker Section */}
             <View style={styles.card}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Text style={{ fontSize: 20 }}>📊</Text>
+                  <Text style={styles.cardTitle}>Category Budget Breakdown</Text>
+                </View>
+                <Text style={{ fontWeight: "700", color: colors.onSurfaceSecondary, fontSize: 11 }}>
+                  Monthly Cap
+                </Text>
+              </View>
+
+              <View style={{ gap: 12 }}>
+                {byCat.slice(0, 5).map((cat) => {
+                  const catBudget = budget.categoryBudgets.find((b) => b.category === cat.key)?.monthlyLimit || 500;
+                  const pct = Math.min(100, Math.round((cat.value / catBudget) * 100));
+                  const meta = categoryMeta(cat.key);
+
+                  return (
+                    <View key={cat.key} style={{ gap: 4 }}>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                        <Text style={{ fontWeight: "700", fontSize: 13, color: colors.onSurface }}>
+                          {meta.emoji} {cat.key}
+                        </Text>
+                        <Text style={{ fontWeight: "600", fontSize: 12, color: colors.onSurfaceSecondary }}>
+                          {rm(cat.value)} / {rm(catBudget)} ({pct}%)
+                        </Text>
+                      </View>
+                      <View style={styles.catProgressBg}>
+                        <View
+                          style={[
+                            styles.catProgressFill,
+                            {
+                              width: `${pct}%`,
+                              backgroundColor: pct > 90 ? "#EF4444" : pct > 70 ? "#F59E0B" : colors.brandPrimary,
+                            },
+                          ]}
+                        />
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* AI Coach with Adorable Dough Mascot */}
+            <View style={[styles.card, { marginTop: spacing.md }]}>
               <View style={styles.coachHeader}>
                 <View style={styles.coachTitleWrap}>
                   <Image
@@ -183,8 +242,8 @@ export default function Insights() {
                     contentFit="cover"
                   />
                   <View>
-                    <Text style={styles.cardTitle}>Boba Coach AI 🧋</Text>
-                    <Text style={styles.coachRole}>Financial & Time Mentor</Text>
+                    <Text style={styles.cardTitle}>DoughTime AI Coach 🥟</Text>
+                    <Text style={styles.coachRole}>Financial & Life-Time Mentor</Text>
                   </View>
                 </View>
 
@@ -199,7 +258,7 @@ export default function Insights() {
               </View>
 
               {loading ? (
-                <ActivityIndicator style={{ marginTop: 20 }} color={colors.brandPrimary} />
+                <ActivityIndicator style={{ marginTop: 24, marginBottom: 12 }} color={colors.brandPrimary} />
               ) : error ? (
                 <View style={styles.errorBox}>
                   <Text style={styles.errorText}>Couldn&apos;t reach the coach: {error}</Text>
@@ -232,59 +291,171 @@ export default function Insights() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
-  title: { fontFamily: "Nunito_800ExtraBold", fontSize: 26, color: colors.onSurface },
-  subtitle: { fontFamily: "Nunito_600SemiBold", color: colors.onSurfaceSecondary, marginTop: 2, marginBottom: spacing.lg },
+  title: {
+    fontWeight: "800",
+    fontSize: 24,
+    color: colors.onSurface,
+    letterSpacing: -0.4,
+  },
+  subtitle: {
+    fontWeight: "600",
+    color: colors.onSurfaceSecondary,
+    marginTop: 2,
+    fontSize: 13,
+  },
   chartCard: {
     backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     padding: spacing.lg,
     alignItems: "center",
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
-    ...shadow.soft,
+    ...shadow.card,
   },
-  centerLabel: { fontFamily: "Nunito_800ExtraBold", fontSize: 18, color: colors.onSurface },
-  centerSub: { fontFamily: "Nunito_700Bold", color: colors.brandPrimary, fontSize: 11, marginTop: 1 },
-  legendRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 2 },
-  legendDot: { width: 10, height: 10, borderRadius: 5 },
-  legendText: { flex: 1, fontFamily: "Nunito_600SemiBold", color: colors.onSurface, fontSize: 14 },
-  legendAmt: { fontFamily: "Nunito_700Bold", color: colors.onSurface, fontSize: 14 },
-  legendHours: { fontFamily: "Nunito_600SemiBold", color: colors.brandPrimary, fontSize: 11 },
+  centerLabel: {
+    fontWeight: "800",
+    fontSize: 18,
+    color: colors.onSurface,
+    letterSpacing: -0.3,
+  },
+  centerSub: {
+    fontWeight: "700",
+    color: colors.brandPrimary,
+    fontSize: 11,
+    marginTop: 1,
+  },
+  legendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 2,
+  },
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  legendText: {
+    flex: 1,
+    fontWeight: "600",
+    color: colors.onSurface,
+    fontSize: 13,
+  },
+  legendAmt: {
+    fontWeight: "700",
+    color: colors.onSurface,
+    fontSize: 13,
+  },
+  legendHours: {
+    fontWeight: "600",
+    color: colors.brandPrimary,
+    fontSize: 11,
+  },
   card: {
     backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
-    ...shadow.soft,
+    ...shadow.card,
   },
-  coachHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  coachTitleWrap: { flexDirection: "row", alignItems: "center", gap: 10 },
-  coachAvatar: { width: 42, height: 42, borderRadius: 21, borderWidth: 1.5, borderColor: colors.brandPrimary },
-  cardTitle: { fontFamily: "Nunito_800ExtraBold", fontSize: 16, color: colors.onSurface },
-  coachRole: { fontFamily: "Nunito_600SemiBold", fontSize: 11, color: colors.onSurfaceSecondary },
+  catProgressBg: {
+    height: 6,
+    backgroundColor: "#F1F5F9",
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  catProgressFill: {
+    height: "100%",
+    borderRadius: 3,
+  },
+  coachHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  coachTitleWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  coachAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: colors.pink,
+  },
+  cardTitle: {
+    fontWeight: "800",
+    fontSize: 15,
+    color: colors.onSurface,
+  },
+  coachRole: {
+    fontWeight: "500",
+    fontSize: 11,
+    color: colors.onSurfaceSecondary,
+  },
   refreshBtn: {
     backgroundColor: colors.surfaceTertiary,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: radius.pill,
   },
-  link: { color: colors.brandPrimary, fontFamily: "Nunito_700Bold", fontSize: 12 },
+  link: {
+    color: colors.brandPrimary,
+    fontWeight: "700",
+    fontSize: 12,
+  },
   insightSummary: {
-    fontFamily: "Nunito_600SemiBold",
+    fontWeight: "500",
     color: colors.onSurface,
     marginTop: spacing.md,
     lineHeight: 20,
-    fontSize: 14,
+    fontSize: 13,
   },
-  tipRow: { flexDirection: "row", gap: 8, alignItems: "flex-start", marginTop: 10 },
-  tipDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.brandPrimary, marginTop: 7 },
-  tipText: { flex: 1, fontFamily: "Nunito_400Regular", color: colors.onSurface, lineHeight: 20, fontSize: 13 },
-  cta: { backgroundColor: colors.brandPrimary, padding: 12, borderRadius: radius.pill, alignItems: "center", marginTop: 12 },
-  ctaText: { color: colors.onBrandPrimary, fontFamily: "Nunito_700Bold" },
-  errorBox: { marginTop: 14, alignItems: "center" },
-  errorText: { color: colors.error, fontFamily: "Nunito_600SemiBold", textAlign: "center", fontSize: 13 },
+  tipRow: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "flex-start",
+    marginTop: 10,
+  },
+  tipDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.brandPrimary,
+    marginTop: 7,
+  },
+  tipText: {
+    flex: 1,
+    fontWeight: "400",
+    color: colors.onSurface,
+    lineHeight: 19,
+    fontSize: 13,
+  },
+  cta: {
+    backgroundColor: colors.brandPrimary,
+    padding: 12,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    marginTop: 12,
+  },
+  ctaText: {
+    color: colors.onBrandPrimary,
+    fontWeight: "700",
+  },
+  errorBox: {
+    marginTop: 14,
+    alignItems: "center",
+  },
+  errorText: {
+    color: colors.error,
+    fontWeight: "600",
+    textAlign: "center",
+    fontSize: 13,
+  },
   retryBtn: {
     backgroundColor: colors.surfaceTertiary,
     paddingHorizontal: 16,
@@ -292,8 +463,35 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     marginTop: 10,
   },
-  retryBtnText: { color: colors.brandPrimary, fontFamily: "Nunito_700Bold", fontSize: 12 },
-  emptyBox: { alignItems: "center", padding: spacing.xxl },
-  emptyImg: { width: 140, height: 140, borderRadius: 70, marginBottom: 16 },
-  emptyText: { fontFamily: "Nunito_600SemiBold", color: colors.onSurfaceSecondary, textAlign: "center", lineHeight: 20 },
+  retryBtnText: {
+    color: colors.brandPrimary,
+    fontWeight: "700",
+    fontSize: 12,
+  },
+  emptyBox: {
+    alignItems: "center",
+    padding: spacing.xxl,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  emptyImg: {
+    width: 120,
+    height: 120,
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontWeight: "800",
+    fontSize: 16,
+    color: colors.onSurface,
+    marginBottom: 4,
+  },
+  emptyText: {
+    fontWeight: "500",
+    color: colors.onSurfaceSecondary,
+    textAlign: "center",
+    lineHeight: 20,
+    fontSize: 13,
+  },
 });
