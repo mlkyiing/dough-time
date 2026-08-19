@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+backend/venv/
+backend/.venv/
+frontend/node_modules/
+
+# Expo / React Native
+frontend/.expo/
+frontend/dist/
+frontend/web-build/
+
+# Environment Variables & Secrets
+.env
+backend/.env
+frontend/.env
+*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# OS metadata
+.DS_Store
+Thumbs.db
