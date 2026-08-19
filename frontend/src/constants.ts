@@ -68,10 +68,10 @@ export function categoryMeta(key?: string | null) {
  */
 export function getBackendUrl(): string {
   if (process.env.EXPO_PUBLIC_BACKEND_URL) {
-    return process.env.EXPO_PUBLIC_BACKEND_URL;
+    return process.env.EXPO_PUBLIC_BACKEND_URL.replace(/\/$/, "");
   }
 
-  // Dynamic host extraction from Expo Dev Server
+  // Dynamic host extraction from Expo Dev Server (Local testing on Expo Go)
   const hostUri =
     Constants.expoConfig?.hostUri ||
     (Constants as any).manifest2?.extra?.expoGo?.debuggerHost ||
@@ -84,5 +84,6 @@ export function getBackendUrl(): string {
     }
   }
 
-  return "http://localhost:8000";
+  // Live production backend URL on Render
+  return "https://dough-time.onrender.com";
 }
