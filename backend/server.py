@@ -58,6 +58,10 @@ GEMINI_MODEL = "gemini-3-flash-preview"
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
+@app.get("/")
+async def app_root():
+    return {"status": "ok", "message": "DoughTime backend is live!", "docs": "/docs"}
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
