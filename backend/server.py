@@ -95,18 +95,47 @@ def _extract_json(text: Optional[str]) -> Optional[Union[dict, list]]:
                     continue
         return None
 
+_cached_gemini_models: List[str] = []
+
+def _get_available_gemini_models() -> List[str]:
+    """Dynamically queries Google Gemini ModelService to discover active model names"""
+    global _cached_gemini_models
+    if _cached_gemini_models:
+        return _cached_gemini_models
+    
+    if not GEMINI_API_KEY:
+        return ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-2.0-flash-exp"]
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_API_KEY}"
+    try:
+        req = urllib.request.Request(url, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            models = data.get("models", [])
+            valid = []
+            for m in models:
+                name = m.get("name", "").replace("models/", "")
+                methods = m.get("supportedGenerationMethods", [])
+                if "generateContent" in methods:
+                    valid.append(name)
+            if valid:
+                # Prioritize flash models for fast OCR
+                valid.sort(key=lambda x: (0 if "flash" in x else 1, 0 if "3.6" in x else (1 if "2.5" in x else 2)))
+                _cached_gemini_models = valid
+                logger.info(f"Discovered active Gemini models: {_cached_gemini_models}")
+                return _cached_gemini_models
+    except Exception as e:
+        logger.warning(f"Could not list Gemini models dynamically: {e}")
+        
+    _cached_gemini_models = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-2.0-flash-exp", "gemini-1.5-flash-latest"]
+    return _cached_gemini_models
+
 async def _call_gemini_api(system: str, prompt: str, image_b64: Optional[str] = None) -> Optional[str]:
-    """Calls Google Gemini Vision directly via REST API with correct inlineData payload"""
+    """Calls Google Gemini Vision directly via REST API with dynamic model resolution"""
     if not GEMINI_API_KEY:
         return None
     
-    models = [
-        "gemini-3.6-flash",
-        "gemini-2.5-flash",
-        "gemini-2.0-flash-exp",
-        "gemini-1.5-flash-latest",
-        "gemini-1.5-flash",
-    ]
+    models = _get_available_gemini_models()
     
     parts = []
     if image_b64 and len(image_b64) > 50:
@@ -124,7 +153,7 @@ async def _call_gemini_api(system: str, prompt: str, image_b64: Optional[str] = 
         "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"}
     }
     
-    for model in models:
+    for model in models[:5]:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
         req = urllib.request.Request(
             url,
@@ -140,7 +169,7 @@ async def _call_gemini_api(system: str, prompt: str, image_b64: Optional[str] = 
                     content = candidates[0].get("content", {})
                     resp_parts = content.get("parts", [])
                     if resp_parts:
-                        logger.info(f"Gemini {model} successfully extracted data!")
+                        logger.info(f"Gemini model {model} successfully extracted OCR result!")
                         return resp_parts[0].get("text", "")
         except urllib.error.HTTPError as he:
             err_body = he.read().decode("utf-8") if he.fp else str(he)
@@ -192,11 +221,16 @@ async def _call_openai_api(system: str, prompt: str, image_b64: Optional[str] = 
     return None
 
 async def _call_emergent_api(system: str, prompt: str, image_b64: Optional[str] = None) -> Optional[str]:
-    """Calls OpenAI-compatible Emergent API endpoint via REST"""
+    """Calls OpenAI-compatible Emergent / OpenRouter API endpoints via REST"""
     if not EMERGENT_LLM_KEY:
         return None
     
-    url = "https://api.openai.com/v1/chat/completions"
+    endpoints = [
+        "https://api.openai.com/v1/chat/completions",
+        "https://api.emergentmethods.ai/v1/chat/completions",
+        "https://openrouter.ai/api/v1/chat/completions"
+    ]
+    
     user_content = []
     if image_b64 and len(image_b64) > 50:
         clean_b64 = image_b64 if image_b64.startswith("data:") else f"data:image/jpeg;base64,{image_b64.split(',')[-1].strip()}"
@@ -212,24 +246,24 @@ async def _call_emergent_api(system: str, prompt: str, image_b64: Optional[str] 
         "response_format": {"type": "json_object"}
     }
     
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {EMERGENT_LLM_KEY}"
-        },
-        method="POST"
-    )
-    
-    try:
-        with urllib.request.urlopen(req, timeout=25) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            choices = data.get("choices", [])
-            if choices:
-                return choices[0].get("message", {}).get("content", "")
-    except Exception as e:
-        logger.error(f"Emergent API call failed: {e}")
+    for url in endpoints:
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {EMERGENT_LLM_KEY}"
+            },
+            method="POST"
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=25) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                choices = data.get("choices", [])
+                if choices:
+                    return choices[0].get("message", {}).get("content", "")
+        except Exception:
+            continue
     return None
 
 async def _run_llm(system: str, user_text: str, image_b64: Optional[str] = None) -> Optional[str]:
