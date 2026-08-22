@@ -52,7 +52,7 @@ export interface AccountTemplate {
 
 export const ACCOUNT_TEMPLATES: AccountTemplate[] = [
   // 1. eWallets & Banks
-  { name: "Touch n Go eWallet", type: "ewallet", emoji: "🚗", color: "#0066B3", category: "bank_ewallet" },
+  { name: "Touch n Go eWallet", type: "ewallet", emoji: "📱", color: "#0066B3", category: "bank_ewallet" },
   { name: "MAE / Maybank", type: "bank", emoji: "🐯", color: "#F5B02A", category: "bank_ewallet" },
   { name: "CIMB Bank", type: "bank", emoji: "🏦", color: "#C8102E", category: "bank_ewallet" },
   { name: "Public Bank", type: "bank", emoji: "🏦", color: "#D50000", category: "bank_ewallet" },

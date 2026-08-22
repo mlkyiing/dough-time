@@ -48,10 +48,11 @@ export type BudgetSettings = {
   enabled: boolean;
 };
 
-export function isLiabilityAccount(type: AccountType): boolean {
+export function isLiabilityAccount(accountOrType: Account | AccountType): boolean {
+  const type = typeof accountOrType === "string" ? accountOrType : accountOrType.type;
   return type === "credit_card" || type === "loan";
 }
 
-export function isAssetAccount(type: AccountType): boolean {
-  return !isLiabilityAccount(type);
+export function isAssetAccount(accountOrType: Account | AccountType): boolean {
+  return !isLiabilityAccount(accountOrType);
 }
