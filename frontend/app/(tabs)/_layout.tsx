@@ -3,17 +3,17 @@ import { Ionicons } from "@expo/vector-icons";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
-import { colors, radius, shadow } from "@/src/theme";
+import { colors, shadow } from "@/src/theme";
 
 function CenterFab({ onPress, bottomInset }: { onPress: () => void; bottomInset: number }) {
   return (
-    <View pointerEvents="box-none" style={[styles.fabWrap, { bottom: 28 + Math.max(bottomInset, 10) }]}>
+    <View pointerEvents="box-none" style={[styles.fabWrap, { bottom: bottomInset + 10 }]}>
       <Pressable
         testID="quick-add-fab"
         onPress={onPress}
         style={({ pressed }) => [styles.fab, pressed && { transform: [{ scale: 0.94 }] }]}
       >
-        <Ionicons name="add" size={28} color={colors.onBrandPrimary} />
+        <Ionicons name="add" size={30} color={colors.onBrandPrimary} />
       </Pressable>
     </View>
   );
@@ -99,25 +99,28 @@ export default function TabsLayout() {
 const styles = StyleSheet.create({
   tabBar: {
     position: "absolute",
-    left: 20,
-    right: 20,
-    height: 64,
-    borderRadius: radius.pill,
+    left: 16,
+    right: 16,
+    height: 70,
+    borderRadius: 35,
     backgroundColor: colors.surfaceSecondary,
     borderTopWidth: 0,
     borderWidth: 1,
     borderColor: colors.borderStrong,
-    paddingBottom: Platform.OS === "ios" ? 4 : 8,
     paddingTop: 8,
+    paddingBottom: 8,
     ...shadow.card,
   },
   tabItem: {
     justifyContent: "center",
     alignItems: "center",
+    height: 52,
+    paddingBottom: 2,
   },
   tabLabel: {
     fontWeight: "700",
-    fontSize: 10,
+    fontSize: 11,
+    lineHeight: 14,
     marginTop: 2,
   },
   fabWrap: {
@@ -128,9 +131,9 @@ const styles = StyleSheet.create({
     zIndex: 99,
   },
   fab: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     backgroundColor: colors.brandPrimary,
     alignItems: "center",
     justifyContent: "center",
