@@ -187,9 +187,11 @@ export default function ScanModal() {
 
         if (parsed.amount && parsed.amount > 0) {
           setAmount(String(parsed.amount.toFixed(2)));
+          extractedViaAI = true;
         }
         if (parsed.merchant) {
           setMerchant(parsed.merchant);
+          extractedViaAI = true;
         }
         if (parsed.category && CATEGORIES.some((c) => c.key === parsed.category)) {
           setCategory(parsed.category);
@@ -200,18 +202,16 @@ export default function ScanModal() {
         if (parsed.note) {
           setNote(parsed.note);
         }
-
-        extractedViaAI = true;
       } catch (localErr) {
         console.warn("Client OCR error:", localErr);
       }
     }
 
     if (extractedViaAI) {
-      setExtractStatus("✨ Receipt extracted successfully!");
+      setExtractStatus("✨ Receipt scanned & details extracted!");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     } else {
-      setExtractStatus("⚠️ Please check and fill in the amount below.");
+      setExtractStatus("⚠️ Could not detect total amount automatically. Please enter amount below.");
     }
     setLoading(false);
   };

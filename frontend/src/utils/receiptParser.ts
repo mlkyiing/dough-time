@@ -85,7 +85,7 @@ export function parseReceiptTextLocally(rawText: string): ParsedReceiptResult {
     if (detectedMerchant) break;
   }
 
-  // If no famous merchant found, check first 3 non-empty lines for brand name
+  // If no famous merchant found, check first 4 non-empty lines for brand name
   if (!detectedMerchant && lines.length > 0) {
     for (let i = 0; i < Math.min(4, lines.length); i++) {
       const line = lines[i];
@@ -96,41 +96,74 @@ export function parseReceiptTextLocally(rawText: string): ParsedReceiptResult {
     }
   }
 
-  // 2. Extract Amount
+  // 2. High-Precision Amount Extraction
   let detectedAmount: number | undefined;
 
-  // Regex patterns targeting Total amount in Malaysian receipts
-  // e.g. "TOTAL 8.90", "TOTAL RM 8.90", "AMOUNT: 250.54", "Grand Total : 45.00", "Nett: 12.50", "RM250.54"
-  const totalRegexes = [
-    /(?:grand\s*total|total\s*amount|total|jumlah|nett|amount|subtotal|bayar|net\s*total)\s*[:=]?\s*(?:rm|myr)?\s*([0-9]+[.,][0-9]{2})/i,
-    /(?:rm|myr)\s*([0-9]+[.,][0-9]{2})/i,
-    /([0-9]+[.,][0-9]{2})\s*(?:total|myr|rm)?$/i,
-  ];
+  // Patterns to exclude (tax lines, change, invoice IDs, quantities, tel numbers)
+  const excludePattern = /(?:service\s*tax|6%|8%|sst|gst|tax\s*amount|change|baki|rounding|round\s*adj|inv#|tel|orderkey|qty|reg|table)/i;
 
-  for (const regex of totalRegexes) {
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const match = lines[i].match(regex);
-      if (match && match[1]) {
-        const parsed = parseFloat(match[1].replace(",", "."));
-        if (parsed > 0 && parsed < 100000) {
-          detectedAmount = parsed;
-          break;
+  // Target lines that represent final bill total or payment amount
+  const totalLineKeywords = /(?:takeout\s*total|dine\s*in\s*total|grand\s*total|total\s*amount|subtotal|total|jumlah|nett|net\s*total|mobile\s*order|amount|bayar|paid|mastercard|visa|tng|duitnow|cash)/i;
+
+  const candidateAmounts: { amount: number; priority: number }[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lineLower = line.toLowerCase();
+
+    // Skip lines that are specifically tax or change
+    if (excludePattern.test(lineLower) && !lineLower.includes("takeout") && !lineLower.includes("grand total")) {
+      continue;
+    }
+
+    // Check if line contains total keyword
+    if (totalLineKeywords.test(lineLower)) {
+      // Find all decimal numbers in this line (e.g. 8.90, 8.40)
+      const matches = line.match(/([0-9]+[.,][0-9]{2})/g);
+      if (matches) {
+        for (const m of matches) {
+          const val = parseFloat(m.replace(",", "."));
+          if (val > 0.40 && val < 50000) {
+            let priority = 1;
+            if (lineLower.includes("takeout total") || lineLower.includes("grand total") || lineLower.includes("dine in total")) {
+              priority = 5;
+            } else if (lineLower.includes("total") && !lineLower.includes("tax")) {
+              priority = 4;
+            } else if (lineLower.includes("mobile order") || lineLower.includes("paid") || lineLower.includes("bayar")) {
+              priority = 3;
+            } else if (lineLower.includes("subtotal")) {
+              priority = 2;
+            }
+            candidateAmounts.push({ amount: val, priority });
+          }
         }
       }
     }
-    if (detectedAmount) break;
   }
 
-  // Fallback: look for any number with 2 decimals in the entire text, pick the maximum or most likely total
+  // Sort candidates by priority (highest priority first), then by amount
+  if (candidateAmounts.length > 0) {
+    candidateAmounts.sort((a, b) => b.priority - a.priority || b.amount - a.amount);
+    detectedAmount = candidateAmounts[0].amount;
+  }
+
+  // Fallback: If no candidate line found, scan all non-excluded lines for the maximum reasonable price
   if (!detectedAmount) {
-    const allDecimals = rawText.match(/([0-9]+[.,][0-9]{2})/g);
-    if (allDecimals && allDecimals.length > 0) {
-      const validNumbers = allDecimals
-        .map((d) => parseFloat(d.replace(",", ".")))
-        .filter((n) => n > 0 && n < 50000);
-      if (validNumbers.length > 0) {
-        detectedAmount = Math.max(...validNumbers);
+    const validNumbers: number[] = [];
+    for (const line of lines) {
+      if (excludePattern.test(line)) continue;
+      const matches = line.match(/([0-9]+[.,][0-9]{2})/g);
+      if (matches) {
+        for (const m of matches) {
+          const val = parseFloat(m.replace(",", "."));
+          if (val > 0.40 && val < 10000) {
+            validNumbers.push(val);
+          }
+        }
       }
+    }
+    if (validNumbers.length > 0) {
+      detectedAmount = Math.max(...validNumbers);
     }
   }
 
