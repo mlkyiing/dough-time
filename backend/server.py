@@ -100,7 +100,13 @@ async def _call_gemini_api(system: str, prompt: str, image_b64: Optional[str] = 
     if not GEMINI_API_KEY:
         return None
     
-    models = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+    models = [
+        "gemini-3.6-flash",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash-exp",
+        "gemini-1.5-flash-latest",
+        "gemini-1.5-flash",
+    ]
     
     parts = []
     if image_b64 and len(image_b64) > 50:
@@ -134,12 +140,13 @@ async def _call_gemini_api(system: str, prompt: str, image_b64: Optional[str] = 
                     content = candidates[0].get("content", {})
                     resp_parts = content.get("parts", [])
                     if resp_parts:
+                        logger.info(f"Gemini {model} successfully extracted data!")
                         return resp_parts[0].get("text", "")
         except urllib.error.HTTPError as he:
             err_body = he.read().decode("utf-8") if he.fp else str(he)
-            logger.error(f"Gemini {model} HTTP error {he.code}: {err_body}")
+            logger.warning(f"Gemini {model} HTTP error {he.code}: {err_body}")
         except Exception as e:
-            logger.error(f"Gemini {model} call error: {e}")
+            logger.warning(f"Gemini {model} call error: {e}")
             
     return None
 
