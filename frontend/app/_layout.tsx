@@ -26,20 +26,16 @@ export default function RootLayout() {
         const style = document.createElement("style");
         style.id = styleId;
         style.textContent = `
-          * {
-            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Rounded", "SF Pro Text", "Nunito", -system-ui, sans-serif !important;
+          html, body, #root {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Rounded", "SF Pro Text", "Nunito", -system-ui, sans-serif;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
             -webkit-tap-highlight-color: transparent;
-            user-select: none;
-            box-sizing: border-box;
+            background-color: ${colors.surface};
+            overscroll-behavior-y: none;
           }
           input, textarea {
             user-select: auto;
-          }
-          body, html {
-            background-color: ${colors.surface};
-            overscroll-behavior-y: none;
           }
         `;
         document.head.appendChild(style);
