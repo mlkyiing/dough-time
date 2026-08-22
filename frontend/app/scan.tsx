@@ -152,10 +152,10 @@ export default function ScanModal() {
     const backendUrl = getBackendUrl();
     let extractedViaAI = false;
 
-    // 1. Try Backend AI (Gemini / OpenAI) with 8s timeout
+    // 1. Try Backend AI (Gemini Vision / OpenAI) with 22s timeout
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const timeoutId = setTimeout(() => controller.abort(), 22000);
 
       const endpoint = scanType === "receipt" ? `${backendUrl}/api/ocr/receipt` : `${backendUrl}/api/ocr/statement`;
       const res = await fetch(endpoint, {
