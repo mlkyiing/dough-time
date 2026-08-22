@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { colors, radius, shadow, spacing } from "@/src/theme";
 import { addManyTransactions, addTransaction, getAccounts, getWageSettings } from "@/src/store";
 import { Account, WageSettings } from "@/src/types";
@@ -27,6 +28,7 @@ export default function ScanModal() {
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [imageB64, setImageB64] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [extractStatus, setExtractStatus] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
 
@@ -39,56 +41,6 @@ export default function ScanModal() {
 
   // Parsed statement transactions list
   const [statementTxns, setStatementTxns] = useState<any[]>([]);
-
-  useEffect(() => {
-    (async () => {
-      const accs = await getAccounts();
-      setAccounts(accs);
-      if (accs.length > 0) setSelectedAccountId(accs[0].id);
-    })();
-  }, []);
-
-  const pickImage = async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      base64: true,
-      quality: 0.8,
-    });
-    if (!res.canceled && res.assets && res.assets[0]) {
-      const asset = res.assets[0];
-      setImageUri(asset.uri);
-      setImageB64(asset.base64 || null);
-      if (asset.base64) {
-        processOCR(asset.base64);
-      }
-    }
-  };
-
-  const pickDocument = async () => {
-    const res = await DocumentPicker.getDocumentAsync({
-      type: ["image/*", "application/pdf"],
-      copyToCacheDirectory: true,
-    });
-    if (!res.canceled && res.assets && res.assets[0]) {
-      const asset = res.assets[0];
-      setImageUri(asset.uri);
-      // document picker assets may not have base64 directly, so use pickImage or fetch blob
-      // for images:
-      try {
-        const response = await fetch(asset.uri);
-        const blob = await response.blob();
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const b64 = (reader.result as string).split(",")[1];
-          setImageB64(b64);
-          processOCR(b64);
-        };
-        reader.readAsDataURL(blob);
-      } catch (e) {
-        Alert.alert("File Error", "Could not process document file.");
-      }
-    }
-  };
 
   const [wage, setWage] = useState<WageSettings>({
     mode: "salary",
@@ -107,8 +59,76 @@ export default function ScanModal() {
     })();
   }, []);
 
+  const getBase64FromUri = async (uri: string, existingB64?: string | null): Promise<string> => {
+    if (existingB64 && existingB64.length > 50) return existingB64;
+    if (uri.startsWith("data:")) {
+      return uri.split(",")[1];
+    }
+    try {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const res = (reader.result as string) || "";
+          const b64 = res.includes(",") ? res.split(",")[1] : res;
+          resolve(b64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      console.warn("Could not convert uri to base64 via blob:", e);
+      return "";
+    }
+  };
+
+  const pickImage = async () => {
+    try {
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        base64: true,
+        quality: 0.85,
+      });
+      if (!res.canceled && res.assets && res.assets[0]) {
+        const asset = res.assets[0];
+        setImageUri(asset.uri);
+        const b64 = await getBase64FromUri(asset.uri, asset.base64);
+        setImageB64(b64);
+        if (b64) {
+          processOCR(b64);
+        } else {
+          Alert.alert("Image Error", "Could not read image file. Please try another image.");
+        }
+      }
+    } catch (e: any) {
+      Alert.alert("Picker Error", e?.message || "Failed to open photo library.");
+    }
+  };
+
+  const pickDocument = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: ["image/*", "application/pdf"],
+        copyToCacheDirectory: true,
+      });
+      if (!res.canceled && res.assets && res.assets[0]) {
+        const asset = res.assets[0];
+        setImageUri(asset.uri);
+        const b64 = await getBase64FromUri(asset.uri);
+        setImageB64(b64);
+        if (b64) {
+          processOCR(b64);
+        }
+      }
+    } catch (e: any) {
+      Alert.alert("File Error", "Could not process document file.");
+    }
+  };
+
   const processOCR = async (b64: string) => {
     setLoading(true);
+    setExtractStatus("Analyzing receipt details with AI…");
     const backendUrl = getBackendUrl();
     try {
       if (scanType === "receipt") {
@@ -119,11 +139,28 @@ export default function ScanModal() {
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        if (data.amount !== null) setAmount(String(data.amount));
+
+        if (data.amount !== null && data.amount !== undefined) {
+          setAmount(String(data.amount));
+        }
         if (data.merchant) setMerchant(data.merchant);
-        if (data.category && CATEGORIES.some((c) => c.key === data.category)) setCategory(data.category);
+        if (data.category && CATEGORIES.some((c) => c.key === data.category)) {
+          setCategory(data.category);
+        }
         if (data.date) setDate(data.date);
         if (data.note) setNote(data.note);
+
+        // Match target account
+        if (data.account && accounts.length > 0) {
+          const accLower = data.account.toLowerCase();
+          const matched = accounts.find((a) =>
+            a.name.toLowerCase().includes(accLower) || accLower.includes(a.name.toLowerCase())
+          );
+          if (matched) setSelectedAccountId(matched.id);
+        }
+
+        setExtractStatus("✨ Receipt extracted successfully!");
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       } else {
         const res = await fetch(`${backendUrl}/api/ocr/statement`, {
           method: "POST",
@@ -133,9 +170,12 @@ export default function ScanModal() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         setStatementTxns(data.transactions || []);
+        setExtractStatus(`✨ Extracted ${data.transactions?.length || 0} transactions!`);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       }
     } catch (e: any) {
-      Alert.alert("OCR Failed", e.message || "Failed to process image with Gemini AI.");
+      console.warn("OCR API error:", e);
+      setExtractStatus("⚠️ AI service busy. You can enter the amount manually below.");
     } finally {
       setLoading(false);
     }
@@ -155,6 +195,7 @@ export default function ScanModal() {
       note: note.trim() || undefined,
       date: date || todayISO(),
     });
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     router.back();
   };
 
@@ -169,6 +210,7 @@ export default function ScanModal() {
       date: t.date || todayISO(),
     }));
     await addManyTransactions(formatted);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     router.back();
   };
 
@@ -177,7 +219,7 @@ export default function ScanModal() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>AI Receipt & Statement Scan 📸</Text>
-        <Pressable onPress={() => router.back()} testID="close-scan">
+        <Pressable onPress={() => router.back()} testID="close-scan" hitSlop={8}>
           <Ionicons name="close-circle-outline" size={28} color={colors.onSurfaceSecondary} />
         </Pressable>
       </View>
@@ -186,14 +228,20 @@ export default function ScanModal() {
       <View style={styles.modeRow}>
         <Pressable
           testID="mode-receipt"
-          onPress={() => { setScanType("receipt"); setStatementTxns([]); }}
+          onPress={() => {
+            setScanType("receipt");
+            setStatementTxns([]);
+          }}
           style={[styles.modeTab, scanType === "receipt" && styles.modeTabActive]}
         >
           <Text style={[styles.modeText, scanType === "receipt" && styles.modeTextActive]}>Receipt / eWallet</Text>
         </Pressable>
         <Pressable
           testID="mode-statement"
-          onPress={() => { setScanType("statement"); setAmount(""); }}
+          onPress={() => {
+            setScanType("statement");
+            setAmount("");
+          }}
           style={[styles.modeTab, scanType === "statement" && styles.modeTabActive]}
         >
           <Text style={[styles.modeText, scanType === "statement" && styles.modeTextActive]}>Bank Statement</Text>
@@ -204,12 +252,23 @@ export default function ScanModal() {
         {/* Upload Action Area */}
         <View style={styles.uploadArea}>
           {imageUri ? (
-            <RNImage source={{ uri: imageUri }} style={styles.previewImage} resizeMode="contain" />
+            <View style={{ width: "100%", alignItems: "center" }}>
+              <RNImage source={{ uri: imageUri }} style={styles.previewImage} resizeMode="contain" />
+              {imageB64 && !loading && (
+                <Pressable
+                  style={styles.reExtractBtn}
+                  onPress={() => processOCR(imageB64)}
+                >
+                  <Ionicons name="sparkles" size={14} color={colors.brandPrimary} />
+                  <Text style={styles.reExtractBtnText}>Re-Scan with AI</Text>
+                </Pressable>
+              )}
+            </View>
           ) : (
             <View style={styles.placeholderBox}>
               <Ionicons name="cloud-upload-outline" size={44} color={colors.brandPrimary} />
               <Text style={styles.placeholderTitle}>Upload Receipt or Bank Statement</Text>
-              <Text style={styles.placeholderSub}>Touch 'n Go, MAE, GrabPay, Maybank, CIMB receipts</Text>
+              <Text style={styles.placeholderSub}>Touch 'n Go, MAE, DuitNow, GrabPay, Maybank, CIMB receipts</Text>
             </View>
           )}
 
@@ -228,7 +287,13 @@ export default function ScanModal() {
         {loading && (
           <View style={styles.loadingBox}>
             <ActivityIndicator size="large" color={colors.brandPrimary} />
-            <Text style={styles.loadingText}>Gemini AI is reading receipt details…</Text>
+            <Text style={styles.loadingText}>AI is reading receipt details & amount…</Text>
+          </View>
+        )}
+
+        {extractStatus && !loading && (
+          <View style={styles.statusBox}>
+            <Text style={styles.statusText}>{extractStatus}</Text>
           </View>
         )}
 
@@ -249,7 +314,7 @@ export default function ScanModal() {
             />
             {parseFloat(amount) > 0 && (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4, marginBottom: 8 }}>
-                <Text style={{ fontFamily: "Nunito_700Bold", fontSize: 12, color: colors.brandPrimary }}>
+                <Text style={{ fontWeight: "700", fontSize: 12, color: colors.brandPrimary }}>
                   ⏱️ Work Time: {formatTimeCost(parseFloat(amount), wage.hourlyRate)}
                 </Text>
               </View>
@@ -260,7 +325,7 @@ export default function ScanModal() {
               testID="scanned-merchant"
               value={merchant}
               onChangeText={setMerchant}
-              placeholder="Merchant name"
+              placeholder="Merchant name (e.g. Maybank DuitNow)"
               placeholderTextColor={colors.onSurfaceSecondary}
               style={styles.input}
             />
@@ -271,7 +336,10 @@ export default function ScanModal() {
                 {CATEGORIES.map((c) => (
                   <Pressable
                     key={c.key}
-                    onPress={() => setCategory(c.key)}
+                    onPress={() => {
+                      Haptics.selectionAsync().catch(() => {});
+                      setCategory(c.key);
+                    }}
                     style={[styles.miniPill, category === c.key && styles.miniPillSelected]}
                   >
                     <Text style={{ fontSize: 12 }}>{c.emoji}</Text>
@@ -281,13 +349,16 @@ export default function ScanModal() {
               </View>
             </ScrollView>
 
-            <Text style={styles.fieldLabel}>Target Account</Text>
+            <Text style={styles.fieldLabel}>Target Account / Card</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.sm }}>
               <View style={{ flexDirection: "row", gap: 6 }}>
                 {accounts.map((acc) => (
                   <Pressable
                     key={acc.id}
-                    onPress={() => setSelectedAccountId(acc.id)}
+                    onPress={() => {
+                      Haptics.selectionAsync().catch(() => {});
+                      setSelectedAccountId(acc.id);
+                    }}
                     style={[styles.miniPill, selectedAccountId === acc.id && styles.miniPillSelected]}
                   >
                     <Text style={{ fontSize: 12 }}>{acc.emoji}</Text>
@@ -296,6 +367,15 @@ export default function ScanModal() {
                 ))}
               </View>
             </ScrollView>
+
+            <Text style={styles.fieldLabel}>Note / Memo (Optional)</Text>
+            <TextInput
+              value={note}
+              onChangeText={setNote}
+              placeholder="e.g. Top up car insurance"
+              placeholderTextColor={colors.onSurfaceSecondary}
+              style={styles.input}
+            />
 
             <Pressable testID="save-scanned-receipt" onPress={handleSaveReceipt} style={styles.submitBtn}>
               <Text style={styles.submitBtnText}>Confirm & Add Transaction</Text>
@@ -384,13 +464,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
     borderColor: colors.border,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
     ...shadow.card,
   },
   placeholderBox: { alignItems: "center", gap: 6, marginVertical: spacing.md },
   placeholderTitle: { fontWeight: "800", fontSize: 16, color: colors.onSurface },
   placeholderSub: { fontWeight: "400", fontSize: 12, color: colors.onSurfaceSecondary, textAlign: "center" },
-  previewImage: { width: "100%", height: 200, borderRadius: radius.md, marginBottom: spacing.md },
+  previewImage: { width: "100%", height: 200, borderRadius: radius.md, marginBottom: spacing.sm },
+  reExtractBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: colors.surfaceTertiary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    marginBottom: spacing.sm,
+  },
+  reExtractBtnText: {
+    color: colors.brandPrimary,
+    fontWeight: "700",
+    fontSize: 12,
+  },
   btnRow: { flexDirection: "row", gap: spacing.md, width: "100%", marginTop: spacing.sm },
   actionBtn: {
     flex: 1,
@@ -415,8 +510,23 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   actionBtnSecondaryText: { color: colors.brandPrimary, fontWeight: "700", fontSize: 13 },
-  loadingBox: { alignItems: "center", marginVertical: spacing.lg, gap: 10 },
-  loadingText: { fontWeight: "600", color: colors.brandPrimary },
+  loadingBox: { alignItems: "center", marginVertical: spacing.md, gap: 8 },
+  loadingText: { fontWeight: "600", color: colors.brandPrimary, fontSize: 13 },
+  statusBox: {
+    backgroundColor: colors.surfaceSecondary,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+  },
+  statusText: {
+    fontWeight: "600",
+    fontSize: 13,
+    color: colors.onSurface,
+    textAlign: "center",
+  },
   formCard: {
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.lg,

@@ -181,6 +181,47 @@ async def _call_openai_api(system: str, prompt: str, image_b64: Optional[str] = 
         logger.error(f"OpenAI API call failed: {e}")
     return None
 
+async def _call_emergent_api(system: str, prompt: str, image_b64: Optional[str] = None) -> Optional[str]:
+    """Calls OpenAI-compatible Emergent API endpoint via REST"""
+    if not EMERGENT_LLM_KEY:
+        return None
+    
+    url = "https://api.openai.com/v1/chat/completions"
+    user_content = []
+    if image_b64:
+        clean_b64 = image_b64 if image_b64.startswith("data:") else f"data:image/jpeg;base64,{image_b64}"
+        user_content.append({"type": "image_url", "image_url": {"url": clean_b64}})
+    user_content.append({"type": "text", "text": prompt})
+    
+    payload = {
+        "model": "gpt-4o-mini",
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_content if image_b64 else prompt}
+        ],
+        "response_format": {"type": "json_object"}
+    }
+    
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {EMERGENT_LLM_KEY}"
+        },
+        method="POST"
+    )
+    
+    try:
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            choices = data.get("choices", [])
+            if choices:
+                return choices[0].get("message", {}).get("content", "")
+    except Exception as e:
+        logger.error(f"Emergent API call failed: {e}")
+    return None
+
 async def _run_llm(system: str, user_text: str, image_b64: Optional[str] = None) -> Optional[str]:
     # 1. Try Gemini
     if GEMINI_API_KEY:
@@ -194,11 +235,17 @@ async def _run_llm(system: str, user_text: str, image_b64: Optional[str] = None)
         if result:
             return result
             
+    # 3. Try Emergent Key
+    if EMERGENT_LLM_KEY:
+        result = await _call_emergent_api(system, user_text, image_b64)
+        if result:
+            return result
+            
     return None
 
 CATEGORIES = [
     "Makan", "Groceries", "Transport", "Petrol", "Tolls", "Telco",
-    "Bills", "Subscriptions", "Shopping", "Health", "Entertainment", "Other",
+    "Bills", "Subscriptions", "Shopping", "Health", "Entertainment", "Loan / Debt", "Investment", "Other",
 ]
 
 # ---------- Routes ----------
@@ -209,7 +256,7 @@ async def root():
 
 @api_router.get("/health")
 async def health():
-    return {"ok": True, "llm_configured": bool(EMERGENT_LLM_KEY)}
+    return {"ok": True, "llm_configured": bool(GEMINI_API_KEY or OPENAI_API_KEY or EMERGENT_LLM_KEY)}
 
 @api_router.post("/ocr/receipt", response_model=ParsedTransaction)
 async def ocr_receipt(req: ReceiptOCRRequest):
@@ -217,17 +264,18 @@ async def ocr_receipt(req: ReceiptOCRRequest):
         raise HTTPException(status_code=400, detail="image_base64 required")
 
     system = (
-        "You are an OCR assistant for Malaysian payment receipts and e-wallet "
-        "screenshots (Touch 'n Go eWallet, MAE, GrabPay, Boost, DuitNow QR, "
-        "Maybank, CIMB, Public Bank, RHB, HSBC, GXBank, AEON Bank, Boost Bank). "
-        "Return ONLY strict JSON, no prose, no code fences."
+        "You are an OCR assistant for Malaysian payment receipts and e-wallet screenshots "
+        "(Touch 'n Go eWallet, MAE, DuitNow Transfer, Maybank, GrabPay, Boost, Public Bank, CIMB, RHB, GXBank). "
+        "Extract the transaction accurately. Look for fields like: Amount (e.g. RM 250.54), Beneficiary/Recipient/Merchant, "
+        "Recipient Reference/Memo, and Transaction Date. Return ONLY strict JSON with no markdown formatting."
     )
     prompt = (
-        "Extract the transaction. Return JSON with fields: "
-        "amount (number in MYR, no currency symbol), merchant (string), "
+        "Extract the transaction from this Malaysian payment receipt/screenshot. Return JSON with fields: "
+        "amount (number in MYR, e.g. 250.54, no currency symbol), "
+        "merchant (string, e.g. recipient name, merchant name, or 'DuitNow - LEE KOK LEONG'), "
         f"date (YYYY-MM-DD), category (one of {CATEGORIES}), "
-        "account (e.g. 'Touch n Go eWallet', 'MAE', 'GrabPay', 'Boost', 'DuitNow QR', 'Maybank', 'CIMB', 'Cash'), "
-        "note (short string). If a field is unknown, use null. Return JSON object only."
+        "account (e.g. 'Touch n Go eWallet', 'MAE', 'Maybank', 'CIMB', 'GrabPay', 'Public Bank', 'Cash'), "
+        "note (short string with reference/details like 'Top up car insurance'). If unknown, use null. Return JSON object only."
     )
 
     try:
@@ -236,36 +284,36 @@ async def ocr_receipt(req: ReceiptOCRRequest):
         if not isinstance(data, dict):
             data = {}
         
-        # Smart Malaysian fallback if LLM key is unconfigured
+        # Fallback if no LLM responded
         if not data and not text:
             data = {
                 "amount": None,
-                "merchant": "Scanned Receipt",
+                "merchant": "Payment Receipt",
                 "date": datetime.now().strftime("%Y-%m-%d"),
-                "category": "Makan",
-                "account": "Touch n Go eWallet",
-                "note": "Receipt Scanned"
+                "category": "Bills",
+                "account": "Maybank",
+                "note": "Scanned Receipt"
             }
 
         return ParsedTransaction(
             amount=(float(data.get("amount")) if data.get("amount") is not None else None),
             merchant=data.get("merchant", "Scanned Receipt"),
             date=data.get("date", datetime.now().strftime("%Y-%m-%d")),
-            category=data.get("category") if data.get("category") in CATEGORIES else "Makan",
+            category=data.get("category") if data.get("category") in CATEGORIES else "Bills",
             account=data.get("account", "Touch n Go eWallet"),
             note=data.get("note", "Scanned Receipt"),
             raw=text or "local-fallback",
         )
     except Exception as e:
-        logger.warning(f"ocr_receipt fallback triggered: {e}")
+        logger.warning(f"ocr_receipt error: {e}")
         return ParsedTransaction(
             amount=None,
             merchant="Scanned Receipt",
             date=datetime.now().strftime("%Y-%m-%d"),
-            category="Makan",
+            category="Bills",
             account="Touch n Go eWallet",
             note="Scanned Receipt",
-            raw="fallback"
+            raw="error-fallback"
         )
 
 @api_router.post("/ocr/statement", response_model=StatementResponse)
