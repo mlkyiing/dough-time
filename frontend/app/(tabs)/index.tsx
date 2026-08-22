@@ -507,7 +507,8 @@ export default function HomeDashboard() {
               <TextInput
                 value={tempSalary}
                 onChangeText={setTempSalary}
-                keyboardType="numeric"
+                keyboardType="decimal-pad"
+                inputMode="decimal"
                 style={styles.modalInput}
                 placeholder="e.g. 4500"
                 placeholderTextColor={colors.onSurfaceSecondary}
@@ -519,7 +520,8 @@ export default function HomeDashboard() {
               <TextInput
                 value={tempHours}
                 onChangeText={setTempHours}
-                keyboardType="numeric"
+                keyboardType="decimal-pad"
+                inputMode="decimal"
                 style={styles.modalInput}
                 placeholder="e.g. 40"
                 placeholderTextColor={colors.onSurfaceSecondary}
@@ -569,7 +571,8 @@ export default function HomeDashboard() {
               <TextInput
                 value={tempBudgetLimit}
                 onChangeText={setTempBudgetLimit}
-                keyboardType="numeric"
+                keyboardType="decimal-pad"
+                inputMode="decimal"
                 style={styles.modalInput}
                 placeholder="e.g. 2000"
                 placeholderTextColor={colors.onSurfaceSecondary}

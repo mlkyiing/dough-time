@@ -1,6 +1,8 @@
 export function rm(n: number, opts?: { showSign?: boolean }) {
   const sign = opts?.showSign && n > 0 ? "+" : "";
-  return `${sign}RM ${Math.abs(n).toFixed(2)}`;
+  const parts = Math.abs(n).toFixed(2).split(".");
+  const intWithCommas = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${sign}RM ${intWithCommas}.${parts[1]}`;
 }
 
 export function shortDate(iso: string) {

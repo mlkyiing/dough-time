@@ -2,7 +2,9 @@ import { useCallback, useMemo, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import {
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -31,10 +33,12 @@ import { amountToWorkHours, rm } from "@/src/format";
 type TabFilter = "all" | "bank_ewallet" | "credit_card" | "fd" | "loan";
 
 import { LoanReminderModal } from "@/src/components/LoanReminderModal";
+import { EditAccountModal } from "@/src/components/EditAccountModal";
 import { AnimatedMascot } from "@/src/components/AnimatedMascot";
 
 export default function Accounts() {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [reminderAccount, setReminderAccount] = useState<Account | null>(null);
   const [wage, setWage] = useState<WageSettings>({
     mode: "salary",
@@ -287,10 +291,8 @@ export default function Accounts() {
               key={a.id}
               testID={`account-${a.id}`}
               onPress={() => {
-                if (isDebt) {
-                  Haptics.selectionAsync().catch(() => {});
-                  setReminderAccount(a);
-                }
+                Haptics.selectionAsync().catch(() => {});
+                setEditingAccount(a);
               }}
               onLongPress={() => remove(a)}
               style={({ pressed }) => [
@@ -352,6 +354,22 @@ export default function Accounts() {
         )}
       </ScrollView>
 
+      {/* Edit & Delete Account Modal */}
+      <EditAccountModal
+        visible={!!editingAccount}
+        account={editingAccount}
+        wage={wage}
+        onClose={() => setEditingAccount(null)}
+        onSave={async (updated) => {
+          await upsertAccount(updated);
+          load();
+        }}
+        onDelete={async (id) => {
+          await deleteAccount(id);
+          load();
+        }}
+      />
+
       {/* Loan & Repayment Reminder Modal */}
       <LoanReminderModal
         visible={!!reminderAccount}
@@ -366,54 +384,99 @@ export default function Accounts() {
 
       {/* Account Picker Modal with Tabs */}
       <Modal visible={pickerOpen} animationType="slide" transparent onRequestClose={() => setPickerOpen(false)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.modalOverlay}
+        >
           <View style={styles.modalContent}>
+            <View style={styles.modalHandleBar} />
+
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Account / Card / Loan</Text>
-              <Pressable hitSlop={8} onPress={() => setPickerOpen(false)}>
-                <Ionicons name="close" size={24} color={colors.onSurfaceSecondary} />
+              <View>
+                <Text style={styles.modalTitle}>Add Account / Card / Loan</Text>
+                <Text style={styles.modalSubTitle}>Choose a template or enter custom details</Text>
+              </View>
+              <Pressable
+                hitSlop={12}
+                onPress={() => setPickerOpen(false)}
+                style={styles.modalCloseBtn}
+              >
+                <Ionicons name="close" size={20} color={colors.onSurfaceSecondary} />
               </Pressable>
             </View>
 
-            {/* Modal Category Selector */}
-            <View style={styles.modalCatRow}>
-              {[
-                { key: "bank_ewallet", label: "Bank & eWallet" },
-                { key: "credit_card", label: "Credit Card" },
-                { key: "fd", label: "FD / Stash" },
-                { key: "loan", label: "Loans" },
-              ].map((c) => (
-                <Pressable
-                  key={c.key}
-                  onPress={() => setPickerCategory(c.key as any)}
-                  style={[
-                    styles.modalCatPill,
-                    pickerCategory === c.key && styles.modalCatPillActive,
-                  ]}
-                >
-                  <Text style={[styles.modalCatText, pickerCategory === c.key && styles.modalCatTextActive]}>
-                    {c.label}
-                  </Text>
-                </Pressable>
-              ))}
+            {/* Modal Category Selector - Horizontal Pill Bar */}
+            <View style={{ marginBottom: spacing.md }}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8, paddingHorizontal: 2 }}
+              >
+                {[
+                  { key: "bank_ewallet", label: "Bank & eWallet", emoji: "📱" },
+                  { key: "credit_card", label: "Credit Card", emoji: "💳" },
+                  { key: "fd", label: "FD / Stash", emoji: "📈" },
+                  { key: "loan", label: "Loans", emoji: "🏦" },
+                ].map((c) => (
+                  <Pressable
+                    key={c.key}
+                    onPress={() => {
+                      Haptics.selectionAsync().catch(() => {});
+                      setPickerCategory(c.key as any);
+                    }}
+                    style={[
+                      styles.modalCatPill,
+                      pickerCategory === c.key && styles.modalCatPillActive,
+                    ]}
+                  >
+                    <Text style={{ fontSize: 13 }}>{c.emoji}</Text>
+                    <Text
+                      style={[
+                        styles.modalCatText,
+                        pickerCategory === c.key && styles.modalCatTextActive,
+                      ]}
+                    >
+                      {c.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
             </View>
 
-            <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
-              <Text style={styles.modalSectionLabel}>Quick Add Popular Malaysian Options</Text>
+            <ScrollView
+              style={{ maxHeight: 420 }}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 24 }}
+            >
+              <Text style={styles.modalSectionLabel}>Quick Add Malaysian Options</Text>
               <View style={styles.templateGrid}>
                 {templateList.map((t) => (
                   <Pressable
                     key={t.name}
-                    style={({ pressed }) => [styles.templateBtn, pressed && { opacity: 0.8 }]}
+                    style={({ pressed }) => [
+                      styles.templateBtn,
+                      pressed && { opacity: 0.8, transform: [{ scale: 0.98 }] },
+                    ]}
                     onPress={() => addTemplate(t)}
                   >
-                    <Text style={{ fontSize: 22 }}>{t.emoji}</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.templateName} numberOfLines={1}>{t.name}</Text>
-                      {t.defaultRate && (
-                        <Text style={{ fontSize: 10, color: colors.brandPrimary, fontWeight: "600" }}>
+                    <View style={styles.templateEmojiBox}>
+                      <Text style={{ fontSize: 20 }}>{t.emoji}</Text>
+                    </View>
+                    <View style={{ flex: 1, gap: 1 }}>
+                      <Text style={styles.templateName} numberOfLines={1}>
+                        {t.name}
+                      </Text>
+                      {t.defaultRate ? (
+                        <Text style={styles.templateRateText}>
                           {t.type === "loan" ? `Interest: ${t.defaultRate}%` : `${t.defaultRate}% p.a.`}
                         </Text>
+                      ) : t.defaultLimit ? (
+                        <Text style={styles.templateLimitText}>
+                          Limit {rm(t.defaultLimit)}
+                        </Text>
+                      ) : (
+                        <Text style={styles.templateSubText}>Tap to add</Text>
                       )}
                     </View>
                   </Pressable>
@@ -433,7 +496,7 @@ export default function Accounts() {
                 placeholderTextColor={colors.onSurfaceSecondary}
                 value={customBalance}
                 onChangeText={setCustomBalance}
-                keyboardType="numeric"
+                keyboardType="decimal-pad"
                 style={[styles.modalInput, { marginTop: spacing.sm }]}
               />
 
@@ -478,7 +541,7 @@ export default function Accounts() {
               </Pressable>
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Wage Settings Modal */}
@@ -763,26 +826,46 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     ...shadow.card,
   },
+  modalHandleBar: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.borderStrong,
+    alignSelf: "center",
+    marginBottom: spacing.md,
+  },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     marginBottom: spacing.md,
   },
   modalTitle: {
     fontWeight: "800",
     fontSize: 18,
     color: colors.onSurface,
+    letterSpacing: -0.3,
   },
-  modalCatRow: {
-    flexDirection: "row",
-    gap: 6,
-    marginBottom: spacing.md,
+  modalSubTitle: {
+    fontWeight: "500",
+    fontSize: 12,
+    color: colors.onSurfaceSecondary,
+    marginTop: 2,
+  },
+  modalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
   },
   modalCatPill: {
-    flex: 1,
-    paddingVertical: 7,
+    flexDirection: "row",
     alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: radius.pill,
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -791,22 +874,24 @@ const styles = StyleSheet.create({
   modalCatPillActive: {
     backgroundColor: colors.brandPrimary,
     borderColor: colors.brandPrimary,
+    ...shadow.soft,
   },
   modalCatText: {
     fontWeight: "700",
-    fontSize: 11,
+    fontSize: 12,
     color: colors.onSurfaceSecondary,
   },
   modalCatTextActive: {
     color: colors.onBrandPrimary,
+    fontWeight: "800",
   },
   modalSectionLabel: {
-    fontWeight: "700",
-    fontSize: 12,
+    fontWeight: "800",
+    fontSize: 11,
     color: colors.onSurfaceSecondary,
     marginBottom: spacing.sm,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
   templateGrid: {
     flexDirection: "row",
@@ -816,19 +901,43 @@ const styles = StyleSheet.create({
   templateBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 10,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.borderStrong,
     borderRadius: radius.md,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 10,
-    width: "48%",
+    width: "48.5%",
+    ...shadow.soft,
+  },
+  templateEmojiBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceTertiary,
+    alignItems: "center",
+    justifyContent: "center",
   },
   templateName: {
     fontWeight: "700",
     fontSize: 12,
     color: colors.onSurface,
+  },
+  templateRateText: {
+    fontSize: 10,
+    color: colors.brandPrimary,
+    fontWeight: "700",
+  },
+  templateLimitText: {
+    fontSize: 10,
+    color: colors.onSurfaceSecondary,
+    fontWeight: "600",
+  },
+  templateSubText: {
+    fontSize: 10,
+    color: colors.onSurfaceSecondary,
+    fontWeight: "500",
   },
   modalInput: {
     backgroundColor: colors.surface,

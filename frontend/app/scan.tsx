@@ -434,6 +434,7 @@ export default function ScanModal() {
               value={amount}
               onChangeText={setAmount}
               keyboardType="decimal-pad"
+              inputMode="decimal"
               placeholder="0.00"
               placeholderTextColor={colors.onSurfaceSecondary}
               style={styles.input}
@@ -594,6 +595,7 @@ export default function ScanModal() {
                 value={editAmount}
                 onChangeText={setEditAmount}
                 keyboardType="decimal-pad"
+                inputMode="decimal"
                 placeholder="0.00"
                 placeholderTextColor={colors.onSurfaceSecondary}
                 style={styles.modalInput}

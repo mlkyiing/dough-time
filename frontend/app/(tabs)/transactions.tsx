@@ -14,7 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { colors, radius, shadow, spacing } from "@/src/theme";
-import { deleteTransaction, getAccounts, getTransactions, getWageSettings } from "@/src/store";
+import { deleteTransaction, getAccounts, getTransactions, getWageSettings, updateTransaction } from "@/src/store";
 import { Account, Transaction, WageSettings } from "@/src/types";
 import { CATEGORIES } from "@/src/constants";
 import { amountToWorkHours, rm } from "@/src/format";
@@ -82,6 +82,13 @@ export default function Transactions() {
         },
       },
     ]);
+  };
+
+  const handleUpdate = async (updated: Transaction) => {
+    await updateTransaction(updated);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    setSelectedTxn(null);
+    await load();
   };
 
   return (
@@ -217,9 +224,11 @@ export default function Transactions() {
         visible={!!selectedTxn}
         transaction={selectedTxn}
         account={accounts.find((a) => a.id === selectedTxn?.accountId)}
+        accounts={accounts}
         hourlyRate={wage.hourlyRate}
         onClose={() => setSelectedTxn(null)}
         onDelete={handleDelete}
+        onUpdate={handleUpdate}
       />
     </SafeAreaView>
   );

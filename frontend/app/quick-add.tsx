@@ -105,6 +105,15 @@ export default function QuickAddModal() {
 
   const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "DEL"];
 
+  const handleClose = () => {
+    Haptics.selectionAsync().catch(() => {});
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)");
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       {/* Header */}
@@ -112,12 +121,12 @@ export default function QuickAddModal() {
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           <Image
             source={require("@/assets/mascot.jpg")}
-            style={{ width: 32, height: 32, borderRadius: 16 }}
+            style={{ width: 36, height: 36, borderRadius: 18 }}
           />
           <Text style={styles.title}>Quick Add Expense</Text>
         </View>
-        <Pressable onPress={() => router.back()} testID="close-quick-add" hitSlop={8}>
-          <Ionicons name="close-circle-outline" size={28} color={colors.onSurfaceSecondary} />
+        <Pressable onPress={handleClose} testID="close-quick-add" hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}>
+          <Ionicons name="close-circle" size={32} color={colors.onSurfaceSecondary} />
         </Pressable>
       </View>
 

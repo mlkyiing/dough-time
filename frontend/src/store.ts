@@ -143,6 +143,31 @@ export async function addManyTransactions(txns: Omit<Transaction, "id" | "create
   }
 }
 
+export async function updateTransaction(updated: Transaction) {
+  const list = await getTransactions();
+  const idx = list.findIndex((t) => t.id === updated.id);
+  if (idx >= 0) {
+    const old = list[idx];
+    const diff = updated.amount - old.amount;
+    list[idx] = updated;
+    await setTransactions(list);
+
+    if (diff !== 0) {
+      const accs = await getAccounts();
+      const accIdx = accs.findIndex((a) => a.id === updated.accountId);
+      if (accIdx >= 0) {
+        const acc = accs[accIdx];
+        if (isLiabilityAccount(acc.type)) {
+          acc.balance = +(acc.balance + diff).toFixed(2);
+        } else {
+          acc.balance = +(acc.balance - diff).toFixed(2);
+        }
+        await setAccounts(accs);
+      }
+    }
+  }
+}
+
 export async function deleteTransaction(idToRemove: string) {
   const list = await getTransactions();
   const target = list.find((t) => t.id === idToRemove);
