@@ -37,6 +37,7 @@ import {
   todayISO,
 } from "@/src/format";
 import { SwipeableTxnRow } from "@/src/components/SwipeableTxnRow";
+import { TransactionDetailModal } from "@/src/components/TransactionDetailModal";
 
 export default function HomeDashboard() {
   const router = useRouter();
@@ -58,6 +59,7 @@ export default function HomeDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [wageModalOpen, setWageModalOpen] = useState(false);
   const [budgetModalOpen, setBudgetModalOpen] = useState(false);
+  const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null);
   const [tempSalary, setTempSalary] = useState("4500");
   const [tempHours, setTempHours] = useState("40");
   const [tempBudgetLimit, setTempBudgetLimit] = useState("2000");
@@ -129,6 +131,7 @@ export default function HomeDashboard() {
         onPress: async () => {
           await deleteTransaction(id);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+          if (selectedTxn?.id === id) setSelectedTxn(null);
           await loadData();
         },
       },
@@ -406,11 +409,11 @@ export default function HomeDashboard() {
           })}
         </ScrollView>
 
-        {/* Recent Activity with Slide to Delete */}
+        {/* Recent Activity with Slide to Delete & Tap for Details */}
         <View style={styles.sectionHeaderRow}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
             <Text style={styles.sectionTitle}>Recent Activity</Text>
-            <Text style={styles.swipeHint}>(slide left to delete)</Text>
+            <Text style={styles.swipeHint}>(tap for detail · slide to delete)</Text>
           </View>
           <Pressable onPress={() => router.push("/(tabs)/transactions")}>
             <Text style={styles.seeAllText}>View All</Text>
@@ -436,12 +439,23 @@ export default function HomeDashboard() {
                 account={acc}
                 hourlyRate={wage.hourlyRate}
                 viewMode={viewMode}
+                onPress={(txn) => setSelectedTxn(txn)}
                 onDelete={handleDeleteTxn}
               />
             );
           })
         )}
       </ScrollView>
+
+      {/* Transaction Detail Sheet */}
+      <TransactionDetailModal
+        visible={!!selectedTxn}
+        transaction={selectedTxn}
+        account={accounts.find((a) => a.id === selectedTxn?.accountId)}
+        hourlyRate={wage.hourlyRate}
+        onClose={() => setSelectedTxn(null)}
+        onDelete={handleDeleteTxn}
+      />
 
       {/* Wage Settings Modal */}
       <Modal

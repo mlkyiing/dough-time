@@ -19,6 +19,7 @@ import { Account, Transaction, WageSettings } from "@/src/types";
 import { CATEGORIES } from "@/src/constants";
 import { amountToWorkHours, rm } from "@/src/format";
 import { SwipeableTxnRow } from "@/src/components/SwipeableTxnRow";
+import { TransactionDetailModal } from "@/src/components/TransactionDetailModal";
 
 export default function Transactions() {
   const router = useRouter();
@@ -33,6 +34,7 @@ export default function Transactions() {
   });
   const [viewMode, setViewMode] = useState<"money" | "time">("money");
   const [filter, setFilter] = useState<string>("All");
+  const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null);
 
   const load = useCallback(async () => {
     const [t, a, w] = await Promise.all([
@@ -74,6 +76,7 @@ export default function Transactions() {
         onPress: async () => {
           await deleteTransaction(id);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+          if (selectedTxn?.id === id) setSelectedTxn(null);
           await load();
         },
       },
@@ -172,7 +175,7 @@ export default function Transactions() {
         </ScrollView>
       </View>
 
-      {/* Transactions List with Swipe to Delete */}
+      {/* Transactions List with Swipe to Delete & Tap for Details */}
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
@@ -198,10 +201,21 @@ export default function Transactions() {
               account={acc}
               hourlyRate={wage.hourlyRate}
               viewMode={viewMode}
+              onPress={(t) => setSelectedTxn(t)}
               onDelete={handleDelete}
             />
           );
         }}
+      />
+
+      {/* Transaction Detail Sheet */}
+      <TransactionDetailModal
+        visible={!!selectedTxn}
+        transaction={selectedTxn}
+        account={accounts.find((a) => a.id === selectedTxn?.accountId)}
+        hourlyRate={wage.hourlyRate}
+        onClose={() => setSelectedTxn(null)}
+        onDelete={handleDelete}
       />
     </SafeAreaView>
   );

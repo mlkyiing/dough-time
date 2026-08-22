@@ -19,6 +19,7 @@ interface Props {
   account?: Account;
   hourlyRate: number;
   viewMode: "money" | "time";
+  onPress?: (transaction: Transaction) => void;
   onDelete: (id: string) => void;
 }
 
@@ -27,6 +28,7 @@ export function SwipeableTxnRow({
   account: acc,
   hourlyRate,
   viewMode,
+  onPress,
   onDelete,
 }: Props) {
   const meta = categoryMeta(t.category);
@@ -96,7 +98,6 @@ export function SwipeableTxnRow({
           style={styles.deleteBtn}
           onPress={handleDelete}
           hitSlop={8}
-          android_ripple={{ color: "#ffffff40" }}
         >
           <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
           <Text style={styles.deleteBtnText}>Delete</Text>
@@ -118,6 +119,9 @@ export function SwipeableTxnRow({
           onPress={() => {
             if (isSwiped.current) {
               closeSwipe();
+            } else if (onPress) {
+              Haptics.selectionAsync().catch(() => {});
+              onPress(t);
             }
           }}
           onLongPress={() => onDelete(t.id)}
