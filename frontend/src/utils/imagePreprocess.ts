@@ -1,8 +1,8 @@
 /**
- * High-performance image pre-processing for receipt OCR:
+ * Safe client-side image enhancer for receipt OCR:
  * - Grayscale conversion
- * - High-contrast boost
- * - Threshold binarization (sharpens faint thermal printer dots into solid text)
+ * - High-contrast boost without clipping shadows
+ * - Preserves character edges for thermal printers
  */
 export async function preprocessReceiptImage(imageUriOrDataUrl: string): Promise<string> {
   if (typeof document === "undefined") {
@@ -21,36 +21,39 @@ export async function preprocessReceiptImage(imageUriOrDataUrl: string): Promise
           return;
         }
 
-        // Scale image if too small to ensure high DPI for OCR
-        const scale = img.width < 1200 ? 1.5 : 1.0;
-        canvas.width = Math.floor(img.width * scale);
-        canvas.height = Math.floor(img.height * scale);
+        // Maintain good resolution (max 1600px width/height for fast WASM OCR)
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 1600;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
 
-        // Draw image scaled
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.width = width;
+        canvas.height = height;
 
-        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        // Draw image
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const imgData = ctx.getImageData(0, 0, width, height);
         const data = imgData.data;
 
-        // Contrast & brightness enhancement
-        const contrast = 1.35; // boost contrast
+        // Smooth contrast enhancement (contrast = 1.25)
+        const contrast = 1.25;
         const factor = (259 * (contrast * 255 + 255)) / (255 * (259 - contrast * 255));
 
         for (let i = 0; i < data.length; i += 4) {
           // Standard luminosity grayscale
           const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
           
-          // Apply contrast
-          let enhanced = factor * (gray - 128) + 128;
-
-          // Adaptive thresholding: thermal text ink is dark
-          if (enhanced < 140) {
-            enhanced = enhanced * 0.4; // make text crisp black
-          } else {
-            enhanced = 255; // make paper crisp white
-          }
-
-          enhanced = Math.max(0, Math.min(255, enhanced));
+          // Apply gentle contrast
+          const enhanced = Math.max(0, Math.min(255, factor * (gray - 128) + 128));
 
           data[i] = enhanced;
           data[i + 1] = enhanced;
@@ -58,7 +61,7 @@ export async function preprocessReceiptImage(imageUriOrDataUrl: string): Promise
         }
 
         ctx.putImageData(imgData, 0, 0);
-        resolve(canvas.toDataURL("image/jpeg", 0.95));
+        resolve(canvas.toDataURL("image/jpeg", 0.92));
       } catch (e) {
         console.warn("Image preprocessing fallback:", e);
         resolve(imageUriOrDataUrl);

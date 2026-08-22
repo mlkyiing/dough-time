@@ -69,7 +69,18 @@ function id() {
 
 export async function getAccounts(): Promise<Account[]> {
   const raw = await AsyncStorage.getItem(K_ACCOUNTS);
-  return raw ? JSON.parse(raw) : [];
+  const list: Account[] = raw ? JSON.parse(raw) : [];
+  let modified = false;
+  for (const acc of list) {
+    if (acc.name.includes("Touch n Go") && acc.emoji === "🚗") {
+      acc.emoji = "📱";
+      modified = true;
+    }
+  }
+  if (modified) {
+    await setAccounts(list);
+  }
+  return list;
 }
 
 export async function setAccounts(accs: Account[]) {

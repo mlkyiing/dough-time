@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   Image as RNImage,
   Pressable,
   ScrollView,
@@ -47,6 +48,13 @@ export default function ScanModal() {
   // Parsed statement transactions list
   const [statementTxns, setStatementTxns] = useState<any[]>([]);
 
+  // Edit statement modal state
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editMerchant, setEditMerchant] = useState("");
+  const [editAmount, setEditAmount] = useState("");
+  const [editCategory, setEditCategory] = useState("Makan");
+  const [editDate, setEditDate] = useState(todayISO());
+
   const [wage, setWage] = useState<WageSettings>({
     mode: "salary",
     monthlySalary: 4500,
@@ -63,6 +71,19 @@ export default function ScanModal() {
       if (accs.length > 0) setSelectedAccountId(accs[0].id);
     })();
   }, []);
+
+  const handleSwitchTab = (type: "receipt" | "statement") => {
+    if (type === scanType) return;
+    Haptics.selectionAsync().catch(() => {});
+    setScanType(type);
+    setImageUri(null);
+    setImageB64(null);
+    setAmount("");
+    setMerchant("");
+    setNote("");
+    setExtractStatus(null);
+    setStatementTxns([]);
+  };
 
   const getBase64FromUri = async (uri: string, existingB64?: string | null): Promise<string> => {
     if (existingB64 && existingB64.length > 50) return existingB64;
@@ -167,10 +188,10 @@ export default function ScanModal() {
       console.log("Backend AI timeout or busy, proceeding to local OCR engine...");
     }
 
-    // 2. High-Precision Client-Side Local OCR Fallback (Tesseract.js + Canvas Image Preprocessing)
+    // 2. High-Precision Client-Side Local OCR Fallback (Tesseract.js)
     if (!extractedViaAI) {
       try {
-        setExtractStatus("⚙️ Enhancing image contrast & running text analyzer…");
+        setExtractStatus("⚙️ Enhancing image & running text analyzer…");
         const rawSource = rawUri.startsWith("blob:") || rawUri.startsWith("http")
           ? rawUri
           : `data:image/jpeg;base64,${b64}`;
@@ -207,13 +228,11 @@ export default function ScanModal() {
             setNote(parsed.note);
           }
         } else {
-          // Bank Statement parsing
           const txns = parseStatementTextLocally(recognizedText);
           if (txns && txns.length > 0) {
             setStatementTxns(txns);
             extractedViaAI = true;
 
-            // Auto match bank account if statement mentions Maybank, CIMB, etc.
             const lowerText = recognizedText.toLowerCase();
             const matchedAcc = accounts.find((a) => lowerText.includes(a.name.toLowerCase()));
             if (matchedAcc) setSelectedAccountId(matchedAcc.id);
@@ -270,6 +289,38 @@ export default function ScanModal() {
     router.back();
   };
 
+  const openEditTxn = (idx: number) => {
+    const item = statementTxns[idx];
+    if (!item) return;
+    Haptics.selectionAsync().catch(() => {});
+    setEditingIndex(idx);
+    setEditMerchant(item.merchant || "");
+    setEditAmount(String(item.amount || ""));
+    setEditCategory(item.category || "Makan");
+    setEditDate(item.date || todayISO());
+  };
+
+  const saveEditTxn = () => {
+    if (editingIndex === null) return;
+    const num = parseFloat(editAmount) || 0;
+    const updated = [...statementTxns];
+    updated[editingIndex] = {
+      ...updated[editingIndex],
+      merchant: editMerchant.trim() || "Bank Transaction",
+      amount: num,
+      category: editCategory,
+      date: editDate,
+    };
+    setStatementTxns(updated);
+    setEditingIndex(null);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  };
+
+  const deleteStatementTxn = (idx: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    setStatementTxns((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       {/* Header */}
@@ -283,24 +334,18 @@ export default function ScanModal() {
         </Pressable>
       </View>
 
-      {/* Mode Selector */}
+      {/* Mode Selector with Tab Clearing */}
       <View style={styles.modeRow}>
         <Pressable
           testID="mode-receipt"
-          onPress={() => {
-            setScanType("receipt");
-            setStatementTxns([]);
-          }}
+          onPress={() => handleSwitchTab("receipt")}
           style={[styles.modeTab, scanType === "receipt" && styles.modeTabActive]}
         >
           <Text style={[styles.modeText, scanType === "receipt" && styles.modeTextActive]}>Receipt / eWallet</Text>
         </Pressable>
         <Pressable
           testID="mode-statement"
-          onPress={() => {
-            setScanType("statement");
-            setAmount("");
-          }}
+          onPress={() => handleSwitchTab("statement")}
           style={[styles.modeTab, scanType === "statement" && styles.modeTabActive]}
         >
           <Text style={[styles.modeText, scanType === "statement" && styles.modeTextActive]}>Bank Statement</Text>
@@ -450,7 +495,7 @@ export default function ScanModal() {
           </View>
         )}
 
-        {/* Parsed Statement Transactions List */}
+        {/* Parsed Statement Transactions List with Edit & Delete */}
         {scanType === "statement" && statementTxns.length > 0 && (
           <View style={styles.formCard}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
@@ -478,15 +523,26 @@ export default function ScanModal() {
 
             {statementTxns.map((t, idx) => (
               <View key={idx} style={styles.statementRow}>
-                <View style={{ flex: 1, gap: 2 }}>
+                <Pressable style={{ flex: 1, gap: 2 }} onPress={() => openEditTxn(idx)}>
                   <Text style={styles.stMerchant} numberOfLines={1}>{t.merchant || "Bank Transaction"}</Text>
                   <Text style={styles.stSub}>{t.date} · {t.category}</Text>
-                </View>
-                <View style={{ alignItems: "flex-end" }}>
+                </Pressable>
+
+                <View style={{ alignItems: "flex-end", marginRight: 10 }}>
                   <Text style={styles.stAmt}>{rm(t.amount || 0)}</Text>
                   <Text style={{ fontSize: 10, color: colors.brandPrimary, fontWeight: "600" }}>
                     ⏱️ {formatTimeCost(t.amount || 0, wage.hourlyRate)}
                   </Text>
+                </View>
+
+                {/* Edit & Delete Action Buttons */}
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <Pressable hitSlop={6} style={styles.rowActionBtn} onPress={() => openEditTxn(idx)}>
+                    <Ionicons name="pencil-outline" size={16} color={colors.brandPrimary} />
+                  </Pressable>
+                  <Pressable hitSlop={6} style={styles.rowActionBtnDelete} onPress={() => deleteStatementTxn(idx)}>
+                    <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                  </Pressable>
                 </View>
               </View>
             ))}
@@ -497,6 +553,70 @@ export default function ScanModal() {
           </View>
         )}
       </ScrollView>
+
+      {/* Edit Statement Transaction Popup Modal */}
+      {editingIndex !== null && (
+        <Modal visible={editingIndex !== null} transparent animationType="slide" onRequestClose={() => setEditingIndex(null)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Edit Extracted Transaction ✏️</Text>
+                <Pressable hitSlop={8} onPress={() => setEditingIndex(null)}>
+                  <Ionicons name="close" size={24} color={colors.onSurfaceSecondary} />
+                </Pressable>
+              </View>
+
+              <Text style={styles.fieldLabel}>Merchant / Description</Text>
+              <TextInput
+                value={editMerchant}
+                onChangeText={setEditMerchant}
+                placeholder="Merchant name"
+                placeholderTextColor={colors.onSurfaceSecondary}
+                style={styles.modalInput}
+              />
+
+              <Text style={[styles.fieldLabel, { marginTop: spacing.sm }]}>Amount (RM)</Text>
+              <TextInput
+                value={editAmount}
+                onChangeText={setEditAmount}
+                keyboardType="decimal-pad"
+                placeholder="0.00"
+                placeholderTextColor={colors.onSurfaceSecondary}
+                style={styles.modalInput}
+              />
+
+              <Text style={[styles.fieldLabel, { marginTop: spacing.sm }]}>Date (YYYY-MM-DD)</Text>
+              <TextInput
+                value={editDate}
+                onChangeText={setEditDate}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.onSurfaceSecondary}
+                style={styles.modalInput}
+              />
+
+              <Text style={[styles.fieldLabel, { marginTop: spacing.sm }]}>Category</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.md }}>
+                <View style={{ flexDirection: "row", gap: 6 }}>
+                  {CATEGORIES.map((c) => (
+                    <Pressable
+                      key={c.key}
+                      onPress={() => setEditCategory(c.key)}
+                      style={[styles.miniPill, editCategory === c.key && styles.miniPillSelected]}
+                    >
+                      <Text style={{ fontSize: 12 }}>{c.emoji}</Text>
+                      <Text style={[styles.miniPillText, editCategory === c.key && styles.miniPillTextSelected]}>{c.key}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </ScrollView>
+
+              <Pressable style={styles.submitBtn} onPress={saveEditTxn}>
+                <Text style={styles.submitBtnText}>Save Transaction Changes</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }
@@ -653,11 +773,63 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.divider,
   },
   stMerchant: { fontWeight: "700", fontSize: 14, color: colors.onSurface },
   stSub: { fontWeight: "400", fontSize: 11, color: colors.onSurfaceSecondary, marginTop: 1 },
   stAmt: { fontWeight: "800", fontSize: 14, color: colors.onSurface },
+  rowActionBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: colors.surfaceTertiary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rowActionBtnDelete: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "#FEE2E2",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.45)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: colors.surfaceSecondary,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    padding: spacing.xl,
+    paddingBottom: 36,
+    ...shadow.card,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.md,
+  },
+  modalTitle: {
+    fontWeight: "800",
+    fontSize: 17,
+    color: colors.onSurface,
+  },
+  modalInput: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    fontWeight: "700",
+    fontSize: 14,
+    color: colors.onSurface,
+    marginBottom: spacing.sm,
+  },
 });

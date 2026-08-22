@@ -184,7 +184,6 @@ export default function HomeDashboard() {
           <View style={styles.brandTitleWrap}>
             <AnimatedMascot variant="default" size={52} interactive={true} />
             <View>
-              <Text style={styles.greetingText}>Selamat Datang 🇲🇾 (Tap mascot for tips!)</Text>
               <Text style={styles.appTitle}>DoughTime</Text>
             </View>
           </View>

@@ -87,8 +87,15 @@ export function parseReceiptTextLocally(rawText: string): ParsedReceiptResult {
 
   if (!detectedMerchant && lines.length > 0) {
     for (let i = 0; i < Math.min(4, lines.length); i++) {
-      const line = lines[i];
-      if (line.length > 3 && !line.includes("191") && !line.match(/^\d+$/) && !line.toLowerCase().includes("receipt")) {
+      const line = lines[i].replace(/^[\W_]+/, "").trim();
+      const alphaCount = (line.match(/[a-zA-Z]/g) || []).length;
+      if (
+        alphaCount >= 4 &&
+        !line.match(/^\d+$/) &&
+        !line.toLowerCase().includes("receipt") &&
+        !line.toLowerCase().includes("tax invoice") &&
+        !line.toLowerCase().includes("orderkey")
+      ) {
         detectedMerchant = line;
         break;
       }
