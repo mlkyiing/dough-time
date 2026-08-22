@@ -321,6 +321,15 @@ export default function ScanModal() {
     setStatementTxns((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  const handleClose = () => {
+    Haptics.selectionAsync().catch(() => {});
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)");
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       {/* Header */}
@@ -329,8 +338,13 @@ export default function ScanModal() {
           <AnimatedMascot variant="detective" size={44} interactive={true} />
           <Text style={styles.title}>AI Scanner</Text>
         </View>
-        <Pressable onPress={() => router.back()} testID="close-scan" hitSlop={8}>
-          <Ionicons name="close-circle-outline" size={28} color={colors.onSurfaceSecondary} />
+        <Pressable
+          onPress={handleClose}
+          testID="close-scan"
+          hitSlop={{ top: 18, bottom: 18, left: 18, right: 18 }}
+          style={styles.closeBtn}
+        >
+          <Ionicons name="close-circle" size={32} color={colors.onSurfaceSecondary} />
         </Pressable>
       </View>
 
@@ -629,6 +643,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
+    zIndex: 999,
+  },
+  closeBtn: {
+    padding: 4,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 999,
   },
   title: { fontWeight: "800", fontSize: 20, color: colors.onSurface, letterSpacing: -0.3 },
   modeRow: {
