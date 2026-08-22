@@ -1,19 +1,19 @@
 import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { Platform, Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { colors, shadow } from "@/src/theme";
 
 function CenterFab({ onPress, bottomInset }: { onPress: () => void; bottomInset: number }) {
   return (
-    <View pointerEvents="box-none" style={[styles.fabWrap, { bottom: bottomInset + 10 }]}>
+    <View pointerEvents="box-none" style={[styles.fabWrap, { bottom: bottomInset + 12 }]}>
       <Pressable
         testID="quick-add-fab"
         onPress={onPress}
         style={({ pressed }) => [styles.fab, pressed && { transform: [{ scale: 0.94 }] }]}
       >
-        <Ionicons name="add" size={30} color={colors.onBrandPrimary} />
+        <Ionicons name="add" size={32} color={colors.onBrandPrimary} />
       </Pressable>
     </View>
   );
@@ -101,27 +101,26 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 16,
     right: 16,
-    height: 70,
-    borderRadius: 35,
+    height: 74,
+    borderRadius: 37,
     backgroundColor: colors.surfaceSecondary,
     borderTopWidth: 0,
     borderWidth: 1,
     borderColor: colors.borderStrong,
-    paddingTop: 8,
-    paddingBottom: 8,
+    paddingTop: 6,
+    paddingBottom: 10,
     ...shadow.card,
   },
   tabItem: {
     justifyContent: "center",
     alignItems: "center",
-    height: 52,
-    paddingBottom: 2,
+    paddingVertical: 2,
   },
   tabLabel: {
     fontWeight: "700",
     fontSize: 11,
-    lineHeight: 14,
     marginTop: 2,
+    marginBottom: 0,
   },
   fabWrap: {
     position: "absolute",
@@ -131,9 +130,9 @@ const styles = StyleSheet.create({
     zIndex: 99,
   },
   fab: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: colors.brandPrimary,
     alignItems: "center",
     justifyContent: "center",
