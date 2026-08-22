@@ -38,6 +38,7 @@ import {
 } from "@/src/format";
 import { SwipeableTxnRow } from "@/src/components/SwipeableTxnRow";
 import { TransactionDetailModal } from "@/src/components/TransactionDetailModal";
+import { AnimatedMascot } from "@/src/components/AnimatedMascot";
 
 export default function HomeDashboard() {
   const router = useRouter();
@@ -171,18 +172,12 @@ export default function HomeDashboard() {
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.brandPrimary} />
         }
       >
-        {/* Header with Kawaii Mascot */}
+        {/* Header with Kawaii Animated Mascot */}
         <View style={styles.headerRow}>
           <View style={styles.brandTitleWrap}>
-            <View style={styles.mascotThumbWrapper}>
-              <Image
-                source={require("@/assets/mascot.jpg")}
-                style={styles.mascotThumb}
-                contentFit="cover"
-              />
-            </View>
+            <AnimatedMascot variant="celebrate" size={52} interactive={true} showBubble={false} />
             <View>
-              <Text style={styles.greetingText}>Selamat Datang 🇲🇾</Text>
+              <Text style={styles.greetingText}>Selamat Datang 🇲🇾 (Tap mascot for tips!)</Text>
               <Text style={styles.appTitle}>DoughTime</Text>
             </View>
           </View>
@@ -356,13 +351,7 @@ export default function HomeDashboard() {
         {/* Mascot Life Energy Reaction Card */}
         <View style={styles.reactionCard}>
           <View style={styles.reactionRow}>
-            <View style={styles.reactionMascotWrap}>
-              <Image
-                source={require("@/assets/mascot_coin.jpg")}
-                style={styles.reactionMascotImg}
-                contentFit="contain"
-              />
-            </View>
+            <AnimatedMascot variant="coin" size={54} interactive={true} />
             <View style={{ flex: 1, gap: 3 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <Text style={styles.reactionTitle}>{bobaReaction.title}</Text>
@@ -422,10 +411,7 @@ export default function HomeDashboard() {
 
         {recentTxns.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Image
-              source={require("@/assets/mascot.jpg")}
-              style={{ width: 70, height: 70, borderRadius: 35, marginBottom: 12 }}
-            />
+            <AnimatedMascot variant="zen" size={76} interactive={true} style={{ marginBottom: 12 }} />
             <Text style={styles.emptyTitle}>No activity yet!</Text>
             <Text style={styles.emptyText}>Tap + to log your first transaction or scan a receipt.</Text>
           </View>

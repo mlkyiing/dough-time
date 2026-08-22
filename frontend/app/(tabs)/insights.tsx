@@ -31,6 +31,8 @@ const PIE_PALETTE = [
   "#F472B6", "#86EFAC",
 ];
 
+import { AnimatedMascot } from "@/src/components/AnimatedMascot";
+
 export default function Insights() {
   const [txns, setTxns] = useState<Transaction[]>([]);
   const [wage, setWage] = useState<WageSettings>({
@@ -236,14 +238,10 @@ export default function Insights() {
             <View style={[styles.card, { marginTop: spacing.md }]}>
               <View style={styles.coachHeader}>
                 <View style={styles.coachTitleWrap}>
-                  <Image
-                    source={require("@/assets/mascot.jpg")}
-                    style={styles.coachAvatar}
-                    contentFit="cover"
-                  />
+                  <AnimatedMascot variant="mentor" size={54} interactive={true} />
                   <View>
-                    <Text style={styles.cardTitle}>DoughTime AI Coach 🥟</Text>
-                    <Text style={styles.coachRole}>Financial & Life-Time Mentor</Text>
+                    <Text style={styles.cardTitle}>DoughTime AI Coach 🥟✨</Text>
+                    <Text style={styles.coachRole}>Financial & Life-Time Mentor (Tap for advice)</Text>
                   </View>
                 </View>
 

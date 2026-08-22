@@ -30,6 +30,8 @@ import { amountToWorkHours, rm } from "@/src/format";
 
 type TabFilter = "all" | "bank_ewallet" | "credit_card" | "fd" | "loan";
 
+import { AnimatedMascot } from "@/src/components/AnimatedMascot";
+
 export default function Accounts() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [wage, setWage] = useState<WageSettings>({
@@ -190,6 +192,15 @@ export default function Accounts() {
       >
         {/* Net Worth Summary Card (Assets vs Liabilities) */}
         <View style={styles.netWorthCard}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: spacing.md }}>
+            <AnimatedMascot variant="zen" size={48} interactive={true} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontWeight: "800", fontSize: 14, color: colors.onSurface }}>DoughTime Vault & Stash 🪙</Text>
+              <Text style={{ fontWeight: "500", fontSize: 11, color: colors.onSurfaceSecondary }}>
+                True Net Worth: {rm(netWorth)} ({netWorthHours.toFixed(1)}h work saved)
+              </Text>
+            </View>
+          </View>
           <View style={styles.nwRow}>
             <View style={{ flex: 1, gap: 2 }}>
               <Text style={styles.nwLabel}>Total Assets</Text>

@@ -15,6 +15,8 @@ import { categoryMeta } from "@/src/constants";
 import { amountToWorkHours, formatTimeCost, getBobaReaction, rm, shortDate } from "@/src/format";
 import { Account, Transaction } from "@/src/types";
 
+import { AnimatedMascot } from "./AnimatedMascot";
+
 interface Props {
   visible: boolean;
   transaction: Transaction | null;
@@ -94,13 +96,7 @@ export function TransactionDetailModal({
             {/* Mascot Impact Reaction */}
             <View style={styles.reactionCard}>
               <View style={styles.reactionRow}>
-                <View style={styles.mascotThumbWrap}>
-                  <Image
-                    source={require("@/assets/mascot_coin.jpg")}
-                    style={{ width: 44, height: 44 }}
-                    contentFit="contain"
-                  />
-                </View>
+                <AnimatedMascot variant="coin" size={48} interactive={true} />
                 <View style={{ flex: 1, gap: 2 }}>
                   <Text style={styles.reactionTitle}>
                     {reaction.title} {reaction.emoji}
