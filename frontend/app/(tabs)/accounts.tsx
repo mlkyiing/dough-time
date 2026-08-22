@@ -30,10 +30,12 @@ import { amountToWorkHours, rm } from "@/src/format";
 
 type TabFilter = "all" | "bank_ewallet" | "credit_card" | "fd" | "loan";
 
+import { LoanReminderModal } from "@/src/components/LoanReminderModal";
 import { AnimatedMascot } from "@/src/components/AnimatedMascot";
 
 export default function Accounts() {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [reminderAccount, setReminderAccount] = useState<Account | null>(null);
   const [wage, setWage] = useState<WageSettings>({
     mode: "salary",
     monthlySalary: 4500,
@@ -193,7 +195,7 @@ export default function Accounts() {
         {/* Net Worth Summary Card (Assets vs Liabilities) */}
         <View style={styles.netWorthCard}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: spacing.md }}>
-            <AnimatedMascot variant="zen" size={48} interactive={true} />
+            <AnimatedMascot variant="rich" size={48} interactive={true} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontWeight: "800", fontSize: 14, color: colors.onSurface }}>DoughTime Vault & Stash 🪙</Text>
               <Text style={{ fontWeight: "500", fontSize: 11, color: colors.onSurfaceSecondary }}>
@@ -284,6 +286,12 @@ export default function Accounts() {
             <Pressable
               key={a.id}
               testID={`account-${a.id}`}
+              onPress={() => {
+                if (isDebt) {
+                  Haptics.selectionAsync().catch(() => {});
+                  setReminderAccount(a);
+                }
+              }}
               onLongPress={() => remove(a)}
               style={({ pressed }) => [
                 styles.accountCard,
@@ -295,9 +303,9 @@ export default function Accounts() {
                 <Text style={{ fontSize: 24 }}>{a.emoji}</Text>
               </View>
 
-              <View style={{ flex: 1, gap: 1 }}>
+              <View style={{ flex: 1, gap: 2 }}>
                 <Text style={styles.accountName}>{a.name}</Text>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                   <Text style={styles.accountType}>
                     {a.type === "credit_card"
                       ? "CREDIT CARD"
@@ -309,6 +317,13 @@ export default function Accounts() {
                   </Text>
                   {a.creditLimit && (
                     <Text style={styles.limitTag}>Limit {rm(a.creditLimit)}</Text>
+                  )}
+                  {isDebt && a.dueDay && (
+                    <View style={styles.dueBadge}>
+                      <Text style={styles.dueBadgeText}>
+                        🔔 {a.dueDay}th {a.monthlyInstallment ? `(${rm(a.monthlyInstallment)}/mo)` : ""}
+                      </Text>
+                    </View>
                   )}
                 </View>
               </View>
@@ -336,6 +351,18 @@ export default function Accounts() {
           </View>
         )}
       </ScrollView>
+
+      {/* Loan & Repayment Reminder Modal */}
+      <LoanReminderModal
+        visible={!!reminderAccount}
+        account={reminderAccount}
+        wage={wage}
+        onClose={() => setReminderAccount(null)}
+        onSave={async (updated) => {
+          await upsertAccount(updated);
+          load();
+        }}
+      />
 
       {/* Account Picker Modal with Tabs */}
       <Modal visible={pickerOpen} animationType="slide" transparent onRequestClose={() => setPickerOpen(false)}>
@@ -863,5 +890,16 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     fontSize: 15,
     color: colors.onBrandPrimary,
+  },
+  dueBadge: {
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+  },
+  dueBadgeText: {
+    color: "#B45309",
+    fontWeight: "700",
+    fontSize: 10,
   },
 });

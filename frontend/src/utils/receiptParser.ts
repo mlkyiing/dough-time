@@ -85,7 +85,6 @@ export function parseReceiptTextLocally(rawText: string): ParsedReceiptResult {
     if (detectedMerchant) break;
   }
 
-  // If no famous merchant found, check first 4 non-empty lines for brand name
   if (!detectedMerchant && lines.length > 0) {
     for (let i = 0; i < Math.min(4, lines.length); i++) {
       const line = lines[i];
@@ -96,33 +95,42 @@ export function parseReceiptTextLocally(rawText: string): ParsedReceiptResult {
     }
   }
 
-  // 2. High-Precision Amount Extraction
+  // 2. High-Precision Mathematical Amount Extraction
   let detectedAmount: number | undefined;
+  let subtotalAmount: number | undefined;
+  let taxAmount: number | undefined;
 
-  // Patterns to exclude (tax lines, change, invoice IDs, quantities, tel numbers)
   const excludePattern = /(?:service\s*tax|6%|8%|sst|gst|tax\s*amount|change|baki|rounding|round\s*adj|inv#|tel|orderkey|qty|reg|table)/i;
-
-  // Target lines that represent final bill total or payment amount
   const totalLineKeywords = /(?:takeout\s*total|dine\s*in\s*total|grand\s*total|total\s*amount|subtotal|total|jumlah|nett|net\s*total|mobile\s*order|amount|bayar|paid|mastercard|visa|tng|duitnow|cash)/i;
 
-  const candidateAmounts: { amount: number; priority: number }[] = [];
+  const candidateAmounts: { amount: number; priority: number; rawText: string }[] = [];
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const lineLower = line.toLowerCase();
 
-    // Skip lines that are specifically tax or change
+    // Check for Subtotal
+    if (lineLower.includes("subtotal")) {
+      const match = line.match(/([0-9]+[.,][0-9]{2})/);
+      if (match) subtotalAmount = parseFloat(match[1].replace(",", "."));
+    }
+
+    // Check for Tax
+    if (lineLower.includes("service tax") || lineLower.includes("sst") || lineLower.includes("gst") || lineLower.includes("6%")) {
+      const match = line.match(/([0-9]+[.,][0-9]{2})/);
+      if (match) taxAmount = parseFloat(match[1].replace(",", "."));
+    }
+
+    // Skip tax or change lines when looking for final total
     if (excludePattern.test(lineLower) && !lineLower.includes("takeout") && !lineLower.includes("grand total")) {
       continue;
     }
 
-    // Check if line contains total keyword
     if (totalLineKeywords.test(lineLower)) {
-      // Find all decimal numbers in this line (e.g. 8.90, 8.40)
       const matches = line.match(/([0-9]+[.,][0-9]{2})/g);
       if (matches) {
         for (const m of matches) {
-          const val = parseFloat(m.replace(",", "."));
+          let val = parseFloat(m.replace(",", "."));
           if (val > 0.40 && val < 50000) {
             let priority = 1;
             if (lineLower.includes("takeout total") || lineLower.includes("grand total") || lineLower.includes("dine in total")) {
@@ -134,20 +142,43 @@ export function parseReceiptTextLocally(rawText: string): ParsedReceiptResult {
             } else if (lineLower.includes("subtotal")) {
               priority = 2;
             }
-            candidateAmounts.push({ amount: val, priority });
+
+            candidateAmounts.push({ amount: val, priority, rawText: lineLower });
           }
         }
       }
     }
   }
 
-  // Sort candidates by priority (highest priority first), then by amount
+  // Sort candidate lines
   if (candidateAmounts.length > 0) {
     candidateAmounts.sort((a, b) => b.priority - a.priority || b.amount - a.amount);
     detectedAmount = candidateAmounts[0].amount;
   }
 
-  // Fallback: If no candidate line found, scan all non-excluded lines for the maximum reasonable price
+  // Cross-Check #1: Subtotal + Tax verification
+  // e.g. Subtotal 8.40 + Tax 0.50 = 8.90
+  if (subtotalAmount && taxAmount && subtotalAmount > 0 && taxAmount > 0) {
+    const computedTotal = parseFloat((subtotalAmount + taxAmount).toFixed(2));
+    if (detectedAmount && detectedAmount < subtotalAmount) {
+      // OCR misread the first digit of total (e.g. 3.90 instead of 8.90)
+      detectedAmount = computedTotal;
+    } else if (!detectedAmount || Math.abs(detectedAmount - computedTotal) < 0.1) {
+      detectedAmount = computedTotal;
+    }
+  }
+
+  // Cross-Check #2: Thermal OCR font confusion correction (3 vs 8, 0 vs 8)
+  // If detected total is less than subtotal (e.g. 3.90 < 8.40), correct the leading digit
+  if (detectedAmount && subtotalAmount && detectedAmount < subtotalAmount) {
+    const strDetected = detectedAmount.toFixed(2);
+    const strSubtotal = subtotalAmount.toFixed(2);
+    if (strDetected[0] === "3" && strSubtotal[0] === "8") {
+      detectedAmount = parseFloat("8" + strDetected.slice(1));
+    }
+  }
+
+  // Fallback if still undefined
   if (!detectedAmount) {
     const validNumbers: number[] = [];
     for (const line of lines) {

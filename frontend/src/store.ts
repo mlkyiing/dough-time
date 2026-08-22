@@ -156,11 +156,11 @@ export async function seedIfNeeded() {
   if (done) return;
 
   const accs: Account[] = [
-    { id: id(), name: "Touch n Go eWallet", type: "ewallet", emoji: "🚗", color: "#0066B3", balance: 128.5 },
+    { id: id(), name: "Touch n Go eWallet", type: "ewallet", emoji: "📱", color: "#0066B3", balance: 128.5 },
     { id: id(), name: "MAE / Maybank", type: "bank", emoji: "🐯", color: "#F5B02A", balance: 2450.0 },
-    { id: id(), name: "Maybank 2 Cards", type: "credit_card", emoji: "💳", color: "#EC4899", balance: 350.0, creditLimit: 8000 },
+    { id: id(), name: "Maybank 2 Cards", type: "credit_card", emoji: "💳", color: "#EC4899", balance: 350.0, creditLimit: 8000, dueDay: 18, monthlyInstallment: 350.0, reminderEnabled: true },
     { id: id(), name: "Maybank Fixed Deposit", type: "fd", emoji: "📈", color: "#10B981", balance: 5000.0, interestRate: 3.85 },
-    { id: id(), name: "Car Loan (Perodua)", type: "loan", emoji: "🚘", color: "#EF4444", balance: 18500.0, interestRate: 3.2 },
+    { id: id(), name: "Car Loan (Perodua)", type: "loan", emoji: "🚘", color: "#EF4444", balance: 18500.0, interestRate: 3.2, dueDay: 25, monthlyInstallment: 650.0, reminderEnabled: true },
     { id: id(), name: "Cash Wallet", type: "cash", emoji: "💵", color: "#34D399", balance: 80.0 },
   ];
   await setAccounts(accs);

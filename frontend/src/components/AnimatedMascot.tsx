@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -8,15 +9,22 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
-import { colors, radius, shadow } from "@/src/theme";
+import { colors, radius, shadow, spacing } from "@/src/theme";
 
-export type MascotVariant = "default" | "coin" | "celebrate" | "zen" | "mentor";
+export type MascotVariant =
+  | "default"
+  | "coin"
+  | "celebrate"
+  | "zen"
+  | "mentor"
+  | "shopping"
+  | "detective"
+  | "rich";
 
 interface Props {
   variant?: MascotVariant;
   size?: number;
   interactive?: boolean;
-  showBubble?: boolean;
   style?: any;
 }
 
@@ -26,6 +34,9 @@ const MASCOT_SOURCES: Record<MascotVariant, any> = {
   celebrate: require("@/assets/mascot_celebrate.jpg"),
   zen: require("@/assets/mascot_zen.jpg"),
   mentor: require("@/assets/mascot_mentor.jpg"),
+  shopping: require("@/assets/mascot_shopping.jpg"),
+  detective: require("@/assets/mascot_detective.jpg"),
+  rich: require("@/assets/mascot_rich.jpg"),
 };
 
 const MASCOT_TIPS = [
@@ -35,37 +46,36 @@ const MASCOT_TIPS = [
   "You're crushing your monthly budget! Keep going! 🚀",
   "Pay yourself first before lifestyle spending! 💡",
   "Compound interest in FD is free money working for you! 📈",
+  "Checking receipts keeps your Dough safe! 🔍",
+  "Your net worth is growing every day! 👑✨",
 ];
 
 export function AnimatedMascot({
-  variant = "coin",
+  variant = "default",
   size = 50,
   interactive = true,
-  showBubble = false,
   style,
 }: Props) {
-  const [bubbleText, setBubbleText] = useState<string | null>(
-    showBubble ? MASCOT_TIPS[0] : null
-  );
+  const [bubbleModalOpen, setBubbleModalOpen] = useState(false);
   const [tipIndex, setTipIndex] = useState(0);
 
   // Animation values
   const floatAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
-  const bubbleFade = useRef(new Animated.Value(showBubble ? 1 : 0)).current;
+  const toastFade = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     // Gentle breathing / floating loop
     const floating = Animated.loop(
       Animated.sequence([
         Animated.timing(floatAnim, {
-          toValue: -5,
-          duration: 1800,
+          toValue: -4,
+          duration: 1600,
           useNativeDriver: true,
         }),
         Animated.timing(floatAnim, {
           toValue: 0,
-          duration: 1800,
+          duration: 1600,
           useNativeDriver: true,
         }),
       ])
@@ -78,12 +88,12 @@ export function AnimatedMascot({
   const handlePress = () => {
     if (!interactive) return;
 
-    Haptics.selectionAsync().catch(() => {});
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
 
-    // Happy bounce
+    // Happy bounce animation
     Animated.sequence([
       Animated.spring(scaleAnim, {
-        toValue: 1.18,
+        toValue: 1.2,
         useNativeDriver: true,
         speed: 25,
         bounciness: 12,
@@ -96,45 +106,72 @@ export function AnimatedMascot({
       }),
     ]).start();
 
-    // Toggle next tip bubble
+    // Show top floating toast modal that cannot be blocked by any container
     const nextIdx = (tipIndex + 1) % MASCOT_TIPS.length;
     setTipIndex(nextIdx);
-    setBubbleText(MASCOT_TIPS[nextIdx]);
+    setBubbleModalOpen(true);
 
+    toastFade.setValue(0);
     Animated.sequence([
-      Animated.timing(bubbleFade, { toValue: 1, duration: 200, useNativeDriver: true }),
-      Animated.delay(4000),
-      Animated.timing(bubbleFade, { toValue: 0, duration: 300, useNativeDriver: true }),
-    ]).start();
+      Animated.spring(toastFade, { toValue: 1, useNativeDriver: true, bounciness: 8 }),
+      Animated.delay(4200),
+      Animated.timing(toastFade, { toValue: 0, duration: 300, useNativeDriver: true }),
+    ]).start(() => {
+      setBubbleModalOpen(false);
+    });
   };
+
+  const imageSource = MASCOT_SOURCES[variant] || MASCOT_SOURCES.default;
 
   return (
     <View style={[styles.container, style]}>
-      {/* Interactive Speech Bubble */}
-      {bubbleText && (
-        <Animated.View
-          style={[
-            styles.bubble,
-            {
-              opacity: bubbleFade,
-              transform: [
+      {/* Interactive Unblockable Speech Toast */}
+      {bubbleModalOpen && (
+        <Modal transparent animationType="none" visible={bubbleModalOpen}>
+          <Pressable
+            style={styles.modalOverlay}
+            onPress={() => setBubbleModalOpen(false)}
+          >
+            <Animated.View
+              style={[
+                styles.floatingToast,
                 {
-                  translateY: bubbleFade.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [6, 0],
-                  }),
+                  opacity: toastFade,
+                  transform: [
+                    {
+                      translateY: toastFade.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [-30, 0],
+                      }),
+                    },
+                    {
+                      scale: toastFade.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.92, 1],
+                      }),
+                    },
+                  ],
                 },
-              ],
-            },
-          ]}
-        >
-          <Text style={styles.bubbleText}>{bubbleText}</Text>
-          <View style={styles.bubbleArrow} />
-        </Animated.View>
+              ]}
+            >
+              <View style={styles.toastMascotThumb}>
+                <Image
+                  source={imageSource}
+                  style={{ width: 36, height: 36, borderRadius: 18 }}
+                  contentFit="cover"
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.toastHeader}>DoughTime Mascot Says: 🥟✨</Text>
+                <Text style={styles.toastBody}>{MASCOT_TIPS[tipIndex]}</Text>
+              </View>
+            </Animated.View>
+          </Pressable>
+        </Modal>
       )}
 
-      {/* Floating Animated Mascot */}
-      <Pressable onPress={handlePress} disabled={!interactive}>
+      {/* Floating Animated Mascot Button */}
+      <Pressable onPress={handlePress} disabled={!interactive} hitSlop={6}>
         <Animated.View
           style={[
             styles.avatarWrapper,
@@ -150,7 +187,7 @@ export function AnimatedMascot({
           ]}
         >
           <Image
-            source={MASCOT_SOURCES[variant]}
+            source={imageSource}
             style={{ width: "100%", height: "100%", borderRadius: size / 2 }}
             contentFit="cover"
           />
@@ -164,7 +201,6 @@ const styles = StyleSheet.create({
   container: {
     alignItems: "center",
     justifyContent: "center",
-    position: "relative",
   },
   avatarWrapper: {
     backgroundColor: colors.pink,
@@ -172,36 +208,47 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     ...shadow.soft,
   },
-  bubble: {
-    position: "absolute",
-    bottom: "105%",
+  modalOverlay: {
+    flex: 1,
+    paddingTop: 55,
+    paddingHorizontal: spacing.lg,
+    alignItems: "center",
+  },
+  floatingToast: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
     backgroundColor: colors.surfaceSecondary,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    maxWidth: 200,
-    zIndex: 999,
+    borderWidth: 1.5,
+    borderColor: colors.brandPrimary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    borderRadius: radius.lg,
+    width: "100%",
+    maxWidth: 380,
     ...shadow.card,
-    marginBottom: 6,
   },
-  bubbleText: {
+  toastMascotThumb: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.pink,
+    padding: 2,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  toastHeader: {
+    fontWeight: "800",
+    fontSize: 12,
+    color: colors.brandPrimary,
+    letterSpacing: -0.1,
+  },
+  toastBody: {
     fontWeight: "700",
-    fontSize: 11,
+    fontSize: 13,
     color: colors.onSurface,
-    textAlign: "center",
-  },
-  bubbleArrow: {
-    position: "absolute",
-    bottom: -5,
-    alignSelf: "center",
-    width: 10,
-    height: 10,
-    backgroundColor: colors.surfaceSecondary,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: colors.borderStrong,
-    transform: [{ rotate: "45deg" }],
+    marginTop: 2,
+    lineHeight: 18,
   },
 });

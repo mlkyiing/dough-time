@@ -16,6 +16,11 @@ export type Account = {
   balance: number; // For assets: balance. For liabilities (credit card / loan): amount owed.
   creditLimit?: number; // Optional limit for credit cards
   interestRate?: number; // Optional APY for FD or APR for Loans
+  // Repayment & Loan Reminder Settings 🔔
+  dueDay?: number; // 1 to 31 (day of month)
+  monthlyInstallment?: number; // e.g. RM 650
+  reminderEnabled?: boolean;
+  reminderDaysBefore?: number; // 1, 2, 3, or 5 days before due date
 };
 
 export type Transaction = {

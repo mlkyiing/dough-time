@@ -20,6 +20,7 @@ import { CATEGORIES } from "@/src/constants";
 import { amountToWorkHours, rm } from "@/src/format";
 import { SwipeableTxnRow } from "@/src/components/SwipeableTxnRow";
 import { TransactionDetailModal } from "@/src/components/TransactionDetailModal";
+import { AnimatedMascot } from "@/src/components/AnimatedMascot";
 
 export default function Transactions() {
   const router = useRouter();
@@ -87,13 +88,16 @@ export default function Transactions() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={{ gap: 2 }}>
-          <Text style={styles.title}>Activity & Life Time</Text>
-          <Text style={styles.subtitle}>
-            {viewMode === "money"
-              ? `Total ${rm(totalExpense)}`
-              : `Total ${totalHours.toFixed(1)} hrs (${(totalHours / 8).toFixed(1)} workdays)`}
-          </Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <AnimatedMascot variant="shopping" size={46} interactive={true} />
+          <View style={{ gap: 2 }}>
+            <Text style={styles.title}>Activity</Text>
+            <Text style={styles.subtitle}>
+              {viewMode === "money"
+                ? `Total ${rm(totalExpense)}`
+                : `Total ${totalHours.toFixed(1)} hrs (${(totalHours / 8).toFixed(1)} workdays)`}
+            </Text>
+          </View>
         </View>
 
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>

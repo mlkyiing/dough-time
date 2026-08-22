@@ -161,6 +161,13 @@ export default function HomeDashboard() {
   const budgetRemainingHours = amountToWorkHours(budgetRemaining, wage.hourlyRate);
   const isOverBudget = monthSpending > budgetLimit;
 
+  const currentDay = new Date().getDate();
+  const upcomingRepayments = accounts.filter((a) => {
+    if (!a.reminderEnabled || !a.dueDay || !isLiabilityAccount(a)) return false;
+    const diff = a.dueDay - currentDay;
+    return diff >= 0 && diff <= (a.reminderDaysBefore || 3);
+  });
+
   const recentTxns = transactions.slice(0, 6);
 
   return (
@@ -175,7 +182,7 @@ export default function HomeDashboard() {
         {/* Header with Kawaii Animated Mascot */}
         <View style={styles.headerRow}>
           <View style={styles.brandTitleWrap}>
-            <AnimatedMascot variant="celebrate" size={52} interactive={true} showBubble={false} />
+            <AnimatedMascot variant="default" size={52} interactive={true} />
             <View>
               <Text style={styles.greetingText}>Selamat Datang 🇲🇾 (Tap mascot for tips!)</Text>
               <Text style={styles.appTitle}>DoughTime</Text>
@@ -218,6 +225,33 @@ export default function HomeDashboard() {
             <Ionicons name="chevron-forward" size={14} color={colors.brandPrimary} />
           </View>
         </Pressable>
+
+        {/* Upcoming Loan / Car Repayment Notification Alert Banner */}
+        {upcomingRepayments.map((rep) => (
+          <Pressable
+            key={rep.id}
+            style={styles.repaymentAlert}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              router.push("/(tabs)/accounts");
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+              <Text style={{ fontSize: 22 }}>{rep.emoji}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.repaymentAlertTitle}>
+                  {rep.name} Due {rep.dueDay! - currentDay === 0 ? "Today" : `in ${rep.dueDay! - currentDay} days`}! 🔔
+                </Text>
+                <Text style={styles.repaymentAlertSub}>
+                  Installment {rm(rep.monthlyInstallment || rep.balance)} · {amountToWorkHours(rep.monthlyInstallment || rep.balance, wage.hourlyRate).toFixed(1)}h work
+                </Text>
+              </View>
+            </View>
+            <View style={styles.repaymentAlertAction}>
+              <Text style={styles.repaymentAlertActionText}>Review</Text>
+            </View>
+          </Pressable>
+        ))}
 
         {/* Hero Card: Net Worth (Assets - Liabilities) */}
         <View style={styles.heroCard}>
@@ -626,6 +660,41 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: spacing.md,
     ...shadow.soft,
+  },
+  repaymentAlert: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#FEF3C7",
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    marginBottom: spacing.md,
+    ...shadow.soft,
+  },
+  repaymentAlertTitle: {
+    fontWeight: "800",
+    fontSize: 13,
+    color: "#92400E",
+  },
+  repaymentAlertSub: {
+    fontWeight: "600",
+    fontSize: 11,
+    color: "#B45309",
+    marginTop: 1,
+  },
+  repaymentAlertAction: {
+    backgroundColor: "#F59E0B",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+  },
+  repaymentAlertActionText: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+    fontSize: 11,
   },
   wagePillLeft: {
     flexDirection: "row",

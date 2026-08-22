@@ -21,8 +21,11 @@ import { colors, radius, shadow, spacing } from "@/src/theme";
 import { addManyTransactions, addTransaction, getAccounts, getWageSettings } from "@/src/store";
 import { Account, WageSettings } from "@/src/types";
 import { CATEGORIES, getBackendUrl } from "@/src/constants";
-import { formatTimeCost, todayISO } from "@/src/format";
+import { formatTimeCost, rm, todayISO } from "@/src/format";
 import { parseReceiptTextLocally } from "@/src/utils/receiptParser";
+import { parseStatementTextLocally } from "@/src/utils/statementParser";
+import { preprocessReceiptImage } from "@/src/utils/imagePreprocess";
+import { AnimatedMascot } from "@/src/components/AnimatedMascot";
 
 export default function ScanModal() {
   const router = useRouter();
@@ -90,7 +93,7 @@ export default function ScanModal() {
       const res = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
         base64: true,
-        quality: 0.85,
+        quality: 0.9,
       });
       if (!res.canceled && res.assets && res.assets[0]) {
         const asset = res.assets[0];
@@ -124,7 +127,7 @@ export default function ScanModal() {
 
   const processOCR = async (rawUri: string, b64: string) => {
     setLoading(true);
-    setExtractStatus("🔍 AI is reading receipt & extracting totals…");
+    setExtractStatus(scanType === "receipt" ? "🔍 Reading receipt & extracting totals…" : "📄 Reading bank e-statement transactions…");
     const backendUrl = getBackendUrl();
     let extractedViaAI = false;
 
@@ -164,43 +167,57 @@ export default function ScanModal() {
       console.log("Backend AI timeout or busy, proceeding to local OCR engine...");
     }
 
-    // 2. High-Precision Client-Side Local OCR Fallback (Tesseract.js)
-    if (!extractedViaAI && scanType === "receipt") {
+    // 2. High-Precision Client-Side Local OCR Fallback (Tesseract.js + Canvas Image Preprocessing)
+    if (!extractedViaAI) {
       try {
-        setExtractStatus("⚙️ Running high-speed receipt text analyzer…");
-        const imageSource = rawUri.startsWith("blob:") || rawUri.startsWith("http")
+        setExtractStatus("⚙️ Enhancing image contrast & running text analyzer…");
+        const rawSource = rawUri.startsWith("blob:") || rawUri.startsWith("http")
           ? rawUri
           : `data:image/jpeg;base64,${b64}`;
 
-        const result = await Tesseract.recognize(imageSource, "eng", {
+        const preprocessedSource = await preprocessReceiptImage(rawSource);
+
+        const result = await Tesseract.recognize(preprocessedSource, "eng", {
           logger: (m) => {
             if (m.status === "recognizing text") {
-              setExtractStatus(`🔍 Scanning receipt: ${Math.round((m.progress || 0) * 100)}%`);
+              setExtractStatus(`🔍 Scanning: ${Math.round((m.progress || 0) * 100)}%`);
             }
           },
         });
 
         const recognizedText = result.data?.text || "";
-        console.log("Local OCR Result Text:", recognizedText);
 
-        const parsed = parseReceiptTextLocally(recognizedText);
+        if (scanType === "receipt") {
+          const parsed = parseReceiptTextLocally(recognizedText);
+          if (parsed.amount && parsed.amount > 0) {
+            setAmount(String(parsed.amount.toFixed(2)));
+            extractedViaAI = true;
+          }
+          if (parsed.merchant) {
+            setMerchant(parsed.merchant);
+            extractedViaAI = true;
+          }
+          if (parsed.category && CATEGORIES.some((c) => c.key === parsed.category)) {
+            setCategory(parsed.category);
+          }
+          if (parsed.date) {
+            setDate(parsed.date);
+          }
+          if (parsed.note) {
+            setNote(parsed.note);
+          }
+        } else {
+          // Bank Statement parsing
+          const txns = parseStatementTextLocally(recognizedText);
+          if (txns && txns.length > 0) {
+            setStatementTxns(txns);
+            extractedViaAI = true;
 
-        if (parsed.amount && parsed.amount > 0) {
-          setAmount(String(parsed.amount.toFixed(2)));
-          extractedViaAI = true;
-        }
-        if (parsed.merchant) {
-          setMerchant(parsed.merchant);
-          extractedViaAI = true;
-        }
-        if (parsed.category && CATEGORIES.some((c) => c.key === parsed.category)) {
-          setCategory(parsed.category);
-        }
-        if (parsed.date) {
-          setDate(parsed.date);
-        }
-        if (parsed.note) {
-          setNote(parsed.note);
+            // Auto match bank account if statement mentions Maybank, CIMB, etc.
+            const lowerText = recognizedText.toLowerCase();
+            const matchedAcc = accounts.find((a) => lowerText.includes(a.name.toLowerCase()));
+            if (matchedAcc) setSelectedAccountId(matchedAcc.id);
+          }
         }
       } catch (localErr) {
         console.warn("Client OCR error:", localErr);
@@ -208,10 +225,14 @@ export default function ScanModal() {
     }
 
     if (extractedViaAI) {
-      setExtractStatus("✨ Receipt scanned & details extracted!");
+      if (scanType === "receipt") {
+        setExtractStatus("✨ Receipt scanned & details extracted!");
+      } else {
+        setExtractStatus(`✨ Extracted ${statementTxns.length || "multiple"} statement transactions!`);
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     } else {
-      setExtractStatus("⚠️ Could not detect total amount automatically. Please enter amount below.");
+      setExtractStatus("⚠️ Please check and confirm the details below.");
     }
     setLoading(false);
   };
@@ -253,7 +274,10 @@ export default function ScanModal() {
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>AI Receipt & Statement Scan 📸</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <AnimatedMascot variant="detective" size={44} interactive={true} />
+          <Text style={styles.title}>AI Scanner</Text>
+        </View>
         <Pressable onPress={() => router.back()} testID="close-scan" hitSlop={8}>
           <Ionicons name="close-circle-outline" size={28} color={colors.onSurfaceSecondary} />
         </Pressable>
@@ -302,8 +326,14 @@ export default function ScanModal() {
           ) : (
             <View style={styles.placeholderBox}>
               <Ionicons name="cloud-upload-outline" size={44} color={colors.brandPrimary} />
-              <Text style={styles.placeholderTitle}>Upload Receipt or Bank Statement</Text>
-              <Text style={styles.placeholderSub}>Touch 'n Go, MAE, DuitNow, McDonald's, FamilyMart, Maybank</Text>
+              <Text style={styles.placeholderTitle}>
+                {scanType === "receipt" ? "Upload Receipt or eWallet Screenshot" : "Upload Bank e-Statement"}
+              </Text>
+              <Text style={styles.placeholderSub}>
+                {scanType === "receipt"
+                  ? "Touch 'n Go, MAE, DuitNow, McDonald's, FamilyMart, Petronas"
+                  : "Maybank, CIMB, Public Bank, RHB, Hong Leong e-statements"}
+              </Text>
             </View>
           )}
 
@@ -423,9 +453,14 @@ export default function ScanModal() {
         {/* Parsed Statement Transactions List */}
         {scanType === "statement" && statementTxns.length > 0 && (
           <View style={styles.formCard}>
-            <Text style={styles.formTitle}>Extracted Statement ({statementTxns.length} txns)</Text>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
+              <Text style={styles.formTitle}>Extracted Statement ({statementTxns.length} txns)</Text>
+              <Text style={{ fontWeight: "700", fontSize: 12, color: colors.brandPrimary }}>
+                Total: {rm(statementTxns.reduce((s, t) => s + (t.amount || 0), 0))}
+              </Text>
+            </View>
 
-            <Text style={styles.fieldLabel}>Target Account</Text>
+            <Text style={styles.fieldLabel}>Import Into Account</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.md }}>
               <View style={{ flexDirection: "row", gap: 6 }}>
                 {accounts.map((acc) => (
@@ -443,11 +478,16 @@ export default function ScanModal() {
 
             {statementTxns.map((t, idx) => (
               <View key={idx} style={styles.statementRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.stMerchant}>{t.merchant || "Expense"}</Text>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={styles.stMerchant} numberOfLines={1}>{t.merchant || "Bank Transaction"}</Text>
                   <Text style={styles.stSub}>{t.date} · {t.category}</Text>
                 </View>
-                <Text style={styles.stAmt}>RM {t.amount?.toFixed(2)}</Text>
+                <View style={{ alignItems: "flex-end" }}>
+                  <Text style={styles.stAmt}>{rm(t.amount || 0)}</Text>
+                  <Text style={{ fontSize: 10, color: colors.brandPrimary, fontWeight: "600" }}>
+                    ⏱️ {formatTimeCost(t.amount || 0, wage.hourlyRate)}
+                  </Text>
+                </View>
               </View>
             ))}
 
@@ -613,11 +653,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: colors.divider,
   },
   stMerchant: { fontWeight: "700", fontSize: 14, color: colors.onSurface },
-  stSub: { fontWeight: "400", fontSize: 11, color: colors.onSurfaceSecondary },
+  stSub: { fontWeight: "400", fontSize: 11, color: colors.onSurfaceSecondary, marginTop: 1 },
   stAmt: { fontWeight: "800", fontSize: 14, color: colors.onSurface },
 });
