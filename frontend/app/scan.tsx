@@ -16,11 +16,13 @@ import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import Tesseract from "tesseract.js";
 import { colors, radius, shadow, spacing } from "@/src/theme";
 import { addManyTransactions, addTransaction, getAccounts, getWageSettings } from "@/src/store";
 import { Account, WageSettings } from "@/src/types";
 import { CATEGORIES, getBackendUrl } from "@/src/constants";
 import { formatTimeCost, todayISO } from "@/src/format";
+import { parseReceiptTextLocally } from "@/src/utils/receiptParser";
 
 export default function ScanModal() {
   const router = useRouter();
@@ -95,11 +97,7 @@ export default function ScanModal() {
         setImageUri(asset.uri);
         const b64 = await getBase64FromUri(asset.uri, asset.base64);
         setImageB64(b64);
-        if (b64) {
-          processOCR(b64);
-        } else {
-          Alert.alert("Image Error", "Could not read image file. Please try another image.");
-        }
+        processOCR(asset.uri, b64);
       }
     } catch (e: any) {
       Alert.alert("Picker Error", e?.message || "Failed to open photo library.");
@@ -117,68 +115,105 @@ export default function ScanModal() {
         setImageUri(asset.uri);
         const b64 = await getBase64FromUri(asset.uri);
         setImageB64(b64);
-        if (b64) {
-          processOCR(b64);
-        }
+        processOCR(asset.uri, b64);
       }
     } catch (e: any) {
       Alert.alert("File Error", "Could not process document file.");
     }
   };
 
-  const processOCR = async (b64: string) => {
+  const processOCR = async (rawUri: string, b64: string) => {
     setLoading(true);
-    setExtractStatus("Analyzing receipt details with AI…");
+    setExtractStatus("🔍 AI is reading receipt & extracting totals…");
     const backendUrl = getBackendUrl();
+    let extractedViaAI = false;
+
+    // 1. Try Backend AI (Gemini / OpenAI) with 8s timeout
     try {
-      if (scanType === "receipt") {
-        const res = await fetch(`${backendUrl}/api/ocr/receipt`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image_base64: b64 }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      const endpoint = scanType === "receipt" ? `${backendUrl}/api/ocr/receipt` : `${backendUrl}/api/ocr/statement`;
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image_base64: b64 }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
         const data = await res.json();
-
-        if (data.amount !== null && data.amount !== undefined) {
-          setAmount(String(data.amount));
+        if (scanType === "receipt") {
+          if (data.amount !== null && data.amount !== undefined && Number(data.amount) > 0) {
+            setAmount(String(data.amount));
+            if (data.merchant && data.merchant !== "Scanned Receipt") setMerchant(data.merchant);
+            if (data.category && CATEGORIES.some((c) => c.key === data.category)) setCategory(data.category);
+            if (data.date) setDate(data.date);
+            if (data.note) setNote(data.note);
+            extractedViaAI = true;
+          }
+        } else {
+          if (data.transactions && data.transactions.length > 0) {
+            setStatementTxns(data.transactions);
+            extractedViaAI = true;
+          }
         }
-        if (data.merchant) setMerchant(data.merchant);
-        if (data.category && CATEGORIES.some((c) => c.key === data.category)) {
-          setCategory(data.category);
-        }
-        if (data.date) setDate(data.date);
-        if (data.note) setNote(data.note);
-
-        // Match target account
-        if (data.account && accounts.length > 0) {
-          const accLower = data.account.toLowerCase();
-          const matched = accounts.find((a) =>
-            a.name.toLowerCase().includes(accLower) || accLower.includes(a.name.toLowerCase())
-          );
-          if (matched) setSelectedAccountId(matched.id);
-        }
-
-        setExtractStatus("✨ Receipt extracted successfully!");
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      } else {
-        const res = await fetch(`${backendUrl}/api/ocr/statement`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image_base64: b64 }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        setStatementTxns(data.transactions || []);
-        setExtractStatus(`✨ Extracted ${data.transactions?.length || 0} transactions!`);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       }
-    } catch (e: any) {
-      console.warn("OCR API error:", e);
-      setExtractStatus("⚠️ AI service busy. You can enter the amount manually below.");
-    } finally {
-      setLoading(false);
+    } catch (e) {
+      console.log("Backend AI timeout or busy, proceeding to local OCR engine...");
     }
+
+    // 2. High-Precision Client-Side Local OCR Fallback (Tesseract.js)
+    if (!extractedViaAI && scanType === "receipt") {
+      try {
+        setExtractStatus("⚙️ Running high-speed receipt text analyzer…");
+        const imageSource = rawUri.startsWith("blob:") || rawUri.startsWith("http")
+          ? rawUri
+          : `data:image/jpeg;base64,${b64}`;
+
+        const result = await Tesseract.recognize(imageSource, "eng", {
+          logger: (m) => {
+            if (m.status === "recognizing text") {
+              setExtractStatus(`🔍 Scanning receipt: ${Math.round((m.progress || 0) * 100)}%`);
+            }
+          },
+        });
+
+        const recognizedText = result.data?.text || "";
+        console.log("Local OCR Result Text:", recognizedText);
+
+        const parsed = parseReceiptTextLocally(recognizedText);
+
+        if (parsed.amount && parsed.amount > 0) {
+          setAmount(String(parsed.amount.toFixed(2)));
+        }
+        if (parsed.merchant) {
+          setMerchant(parsed.merchant);
+        }
+        if (parsed.category && CATEGORIES.some((c) => c.key === parsed.category)) {
+          setCategory(parsed.category);
+        }
+        if (parsed.date) {
+          setDate(parsed.date);
+        }
+        if (parsed.note) {
+          setNote(parsed.note);
+        }
+
+        extractedViaAI = true;
+      } catch (localErr) {
+        console.warn("Client OCR error:", localErr);
+      }
+    }
+
+    if (extractedViaAI) {
+      setExtractStatus("✨ Receipt extracted successfully!");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    } else {
+      setExtractStatus("⚠️ Please check and fill in the amount below.");
+    }
+    setLoading(false);
   };
 
   const handleSaveReceipt = async () => {
@@ -257,7 +292,7 @@ export default function ScanModal() {
               {imageB64 && !loading && (
                 <Pressable
                   style={styles.reExtractBtn}
-                  onPress={() => processOCR(imageB64)}
+                  onPress={() => processOCR(imageUri, imageB64)}
                 >
                   <Ionicons name="sparkles" size={14} color={colors.brandPrimary} />
                   <Text style={styles.reExtractBtnText}>Re-Scan with AI</Text>
@@ -268,7 +303,7 @@ export default function ScanModal() {
             <View style={styles.placeholderBox}>
               <Ionicons name="cloud-upload-outline" size={44} color={colors.brandPrimary} />
               <Text style={styles.placeholderTitle}>Upload Receipt or Bank Statement</Text>
-              <Text style={styles.placeholderSub}>Touch 'n Go, MAE, DuitNow, GrabPay, Maybank, CIMB receipts</Text>
+              <Text style={styles.placeholderSub}>Touch 'n Go, MAE, DuitNow, McDonald's, FamilyMart, Maybank</Text>
             </View>
           )}
 
@@ -287,7 +322,9 @@ export default function ScanModal() {
         {loading && (
           <View style={styles.loadingBox}>
             <ActivityIndicator size="large" color={colors.brandPrimary} />
-            <Text style={styles.loadingText}>AI is reading receipt details & amount…</Text>
+            <Text style={styles.loadingText}>
+              {extractStatus || "Reading receipt details and amount…"}
+            </Text>
           </View>
         )}
 
@@ -325,7 +362,7 @@ export default function ScanModal() {
               testID="scanned-merchant"
               value={merchant}
               onChangeText={setMerchant}
-              placeholder="Merchant name (e.g. Maybank DuitNow)"
+              placeholder="Merchant name (e.g. McDonald's)"
               placeholderTextColor={colors.onSurfaceSecondary}
               style={styles.input}
             />
@@ -372,7 +409,7 @@ export default function ScanModal() {
             <TextInput
               value={note}
               onChangeText={setNote}
-              placeholder="e.g. Top up car insurance"
+              placeholder="e.g. McFlurry & Fries"
               placeholderTextColor={colors.onSurfaceSecondary}
               style={styles.input}
             />
