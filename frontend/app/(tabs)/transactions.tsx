@@ -22,6 +22,7 @@ import { amountToWorkHours, rm } from "@/src/format";
 import { SwipeableTxnRow } from "@/src/components/SwipeableTxnRow";
 import { TransactionDetailModal } from "@/src/components/TransactionDetailModal";
 import { AnimatedMascot } from "@/src/components/AnimatedMascot";
+import { CuteAppBackground } from "@/src/components/CuteAppBackground";
 
 export default function Transactions() {
   const router = useRouter();
@@ -104,6 +105,7 @@ export default function Transactions() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
+      <CuteAppBackground />
       {/* Header */}
       <View style={styles.header}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -246,7 +248,7 @@ export default function Transactions() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "transparent" },
+  container: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",

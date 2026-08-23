@@ -44,6 +44,7 @@ import { TransactionDetailModal } from "@/src/components/TransactionDetailModal"
 import { AnimatedMascot } from "@/src/components/AnimatedMascot";
 import { CloudSyncModal } from "@/src/components/CloudSyncModal";
 import { SmartBudgetModal } from "@/src/components/SmartBudgetModal";
+import { CuteAppBackground } from "@/src/components/CuteAppBackground";
 import { calculateBucketSpending } from "@/src/utils/budgetAnalyzer";
 
 export default function HomeDashboard() {
@@ -202,6 +203,7 @@ export default function HomeDashboard() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
+      <CuteAppBackground />
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: 130 }}
@@ -687,7 +689,7 @@ export default function HomeDashboard() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "transparent" },
+  container: { flex: 1, backgroundColor: colors.surface },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",

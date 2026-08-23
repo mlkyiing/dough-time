@@ -28,11 +28,9 @@ export default function TabsLayout() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      <CuteAppBackground />
       <Tabs
         screenOptions={{
           headerShown: false,
-          sceneStyle: { backgroundColor: "transparent" },
           tabBarActiveTintColor: colors.brandPrimary,
           tabBarInactiveTintColor: colors.onSurfaceSecondary,
           tabBarStyle: [

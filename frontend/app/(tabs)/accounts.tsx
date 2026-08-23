@@ -32,12 +32,11 @@ import { Account, AccountType, isAssetAccount, isLiabilityAccount, SyncSession, 
 import { ACCOUNT_TEMPLATES, AccountTemplate } from "@/src/constants";
 import { amountToWorkHours, rm } from "@/src/format";
 
-type TabFilter = "all" | "bank_ewallet" | "credit_card" | "fd" | "loan";
-
 import { LoanReminderModal } from "@/src/components/LoanReminderModal";
 import { EditAccountModal } from "@/src/components/EditAccountModal";
 import { AnimatedMascot } from "@/src/components/AnimatedMascot";
 import { CloudSyncModal } from "@/src/components/CloudSyncModal";
+import { CuteAppBackground } from "@/src/components/CuteAppBackground";
 
 export default function Accounts() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -199,6 +198,7 @@ export default function Accounts() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
+      <CuteAppBackground />
       {/* Header */}
       <View style={styles.header}>
         <View style={{ gap: 2 }}>
@@ -682,7 +682,7 @@ export default function Accounts() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "transparent" },
+  container: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",

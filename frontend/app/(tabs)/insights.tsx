@@ -32,6 +32,7 @@ const PIE_PALETTE = [
 ];
 
 import { AnimatedMascot } from "@/src/components/AnimatedMascot";
+import { CuteAppBackground } from "@/src/components/CuteAppBackground";
 
 export default function Insights() {
   const [txns, setTxns] = useState<Transaction[]>([]);
@@ -129,6 +130,7 @@ export default function Insights() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
+      <CuteAppBackground />
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: 130 }}
         showsVerticalScrollIndicator={false}
@@ -288,7 +290,7 @@ export default function Insights() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "transparent" },
+  container: { flex: 1, backgroundColor: colors.surface },
   title: {
     fontWeight: "800",
     fontSize: 24,
