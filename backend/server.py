@@ -738,6 +738,99 @@ async def sync_merge(req: VaultMergeRequest):
     finally:
         conn.close()
 
+@api_router.post("/shortcut/add")
+@api_router.get("/shortcut/add")
+async def shortcut_quick_add(
+    sync_code: str,
+    amount: float,
+    category: Optional[str] = "Makan",
+    merchant: Optional[str] = "",
+    note: Optional[str] = "",
+    account_name: Optional[str] = None
+):
+    if not sync_code or amount <= 0:
+        raise HTTPException(status_code=400, detail="Valid sync_code and positive amount are required")
+        
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        row = _fetch_vault_row(conn, sync_code)
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Sync Vault '{sync_code}' not found. Please check your Sync Code in DoughTime.")
+            
+        sync_id, actual_sync_code, data_json, _, _ = row
+        data = json.loads(data_json)
+        
+        accounts = data.get("accounts", [])
+        transactions = data.get("transactions", [])
+        wage_settings = data.get("wage_settings") or {"hourlyRate": 25.96}
+        budget_settings = data.get("budget_settings") or {}
+        
+        # Pick matching or default liquid account
+        target_account = None
+        if account_name:
+            target_account = next((a for a in accounts if a.get("name", "").lower() == account_name.lower()), None)
+        if not target_account:
+            target_account = next((a for a in accounts if a.get("type") in ["bank", "ewallet", "cash"]), accounts[0] if accounts else None)
+            
+        target_acc_id = target_account.get("id") if target_account else None
+        
+        # Generate new transaction record
+        now_dt = datetime.now()
+        now_iso = now_dt.strftime("%Y-%m-%d")
+        txn_id = f"txn_{uuid.uuid4().hex[:10]}"
+        
+        new_txn = {
+            "id": txn_id,
+            "amount": float(amount),
+            "category": category or "Makan",
+            "merchant": merchant or (category or "Quick Expense"),
+            "date": now_iso,
+            "accountId": target_acc_id,
+            "note": note or "Added via iOS Back Tap Shortcut ⚡",
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+        }
+        
+        transactions.insert(0, new_txn)
+        
+        # Update account balance if found
+        if target_account:
+            for acc in accounts:
+                if acc.get("id") == target_acc_id:
+                    acc["balance"] = round(acc.get("balance", 0) - float(amount), 2)
+                    break
+                    
+        hourly_rate = float(wage_settings.get("hourlyRate") or 25.96)
+        work_hours = round(float(amount) / (hourly_rate or 1), 1)
+        
+        # Update vault in DB
+        now_utc_iso = datetime.now(timezone.utc).isoformat()
+        updated_payload = {
+            "accounts": accounts,
+            "transactions": transactions,
+            "wage_settings": wage_settings,
+            "budget_settings": budget_settings,
+            "last_modified": now_utc_iso
+        }
+        
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE vaults SET data_json = ?, last_modified = ? WHERE sync_id = ?",
+            (json.dumps(updated_payload), now_utc_iso, sync_id)
+        )
+        conn.commit()
+        
+        return {
+            "success": True,
+            "message": f"Recorded RM {amount:.2f} for {category}! ({work_hours} hrs of work 🍞)",
+            "amount": amount,
+            "category": category,
+            "work_hours": f"{work_hours} hrs",
+            "account": target_account.get("name") if target_account else "Default",
+            "sync_code": actual_sync_code
+        }
+    finally:
+        conn.close()
+
 @api_router.get("/sync/status")
 async def sync_status(sync_key: str):
     conn = sqlite3.connect(DB_PATH)
