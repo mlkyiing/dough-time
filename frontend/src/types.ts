@@ -61,3 +61,24 @@ export function isLiabilityAccount(accountOrType: Account | AccountType): boolea
 export function isAssetAccount(accountOrType: Account | AccountType): boolean {
   return !isLiabilityAccount(accountOrType);
 }
+
+export type SyncStatus = "idle" | "synced" | "syncing" | "offline" | "error";
+
+export type SyncSession = {
+  syncId: string;
+  syncCode: string;
+  lastSyncedAt?: string;
+  lastModifiedAt?: string;
+  autoSyncEnabled: boolean;
+};
+
+export type VaultSnapshot = {
+  syncId?: string;
+  syncCode?: string;
+  accounts: Account[];
+  transactions: Transaction[];
+  wageSettings: WageSettings;
+  budgetSettings: BudgetSettings;
+  lastModified: string;
+  appVersion?: string;
+};

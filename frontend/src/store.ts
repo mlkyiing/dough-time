@@ -1,11 +1,23 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Account, BudgetSettings, isLiabilityAccount, Transaction, WageSettings } from "./types";
+import { getBackendUrl } from "./constants";
+import {
+  Account,
+  BudgetSettings,
+  isLiabilityAccount,
+  SyncSession,
+  SyncStatus,
+  Transaction,
+  VaultSnapshot,
+  WageSettings,
+} from "./types";
 
 const K_ACCOUNTS = "dm.accounts.v3";
 const K_TXNS = "dm.transactions.v3";
 const K_SEED = "dm.seeded.v3";
 const K_WAGE = "dt.wage.v3";
 const K_BUDGET = "dt.budget.v3";
+const K_SYNC_SESSION = "dt.sync.session.v1";
+const K_LAST_MODIFIED = "dt.last.modified.v1";
 
 export const DEFAULT_WAGE: WageSettings = {
   mode: "salary",
@@ -27,13 +39,270 @@ export const DEFAULT_BUDGET: BudgetSettings = {
   ],
 };
 
+// Listeners for live sync state
+type SyncListener = (status: SyncStatus, session: SyncSession | null) => void;
+const syncListeners: Set<SyncListener> = new Set();
+let currentSyncStatus: SyncStatus = "idle";
+let autoSyncTimeout: any = null;
+
+function notifySync(status: SyncStatus, session: SyncSession | null) {
+  currentSyncStatus = status;
+  syncListeners.forEach((fn) => {
+    try {
+      fn(status, session);
+    } catch {}
+  });
+}
+
+export function subscribeSyncStatus(listener: SyncListener): () => void {
+  syncListeners.add(listener);
+  getSyncSession().then((session) => listener(currentSyncStatus, session));
+  return () => {
+    syncListeners.delete(listener);
+  };
+}
+
 export function calculateHourlyRate(salary: number, hoursPerWeek: number): number {
   if (hoursPerWeek <= 0) return 25.0;
-  // 52 weeks / 12 months = 4.333 weeks per month
   const monthlyWorkHours = hoursPerWeek * (52 / 12);
   const rate = salary / monthlyWorkHours;
   return +rate.toFixed(2);
 }
+
+function id() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+async function touchModified(): Promise<string> {
+  const now = new Date().toISOString();
+  await AsyncStorage.setItem(K_LAST_MODIFIED, now);
+  scheduleAutoSync();
+  return now;
+}
+
+// ---------- Cloud Sync Core Methods ----------
+
+export async function getSyncSession(): Promise<SyncSession | null> {
+  const raw = await AsyncStorage.getItem(K_SYNC_SESSION);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export async function setSyncSession(session: SyncSession) {
+  await AsyncStorage.setItem(K_SYNC_SESSION, JSON.stringify(session));
+  notifySync(currentSyncStatus, session);
+}
+
+/**
+ * Initializes or fetches a persistent sync session for this device
+ */
+export async function initOrGetSyncSession(): Promise<SyncSession> {
+  let session = await getSyncSession();
+  if (session && session.syncId && session.syncCode) {
+    return session;
+  }
+
+  const backendUrl = getBackendUrl();
+  try {
+    const res = await fetch(`${backendUrl}/api/sync/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      session = {
+        syncId: data.sync_id,
+        syncCode: data.sync_code,
+        autoSyncEnabled: true,
+        lastModifiedAt: new Date().toISOString(),
+      };
+      await setSyncSession(session);
+      return session;
+    }
+  } catch (e) {
+    console.warn("Could not register sync online, creating local fallback key", e);
+  }
+
+  // Local fallback if offline during first open
+  const fallbackCode = `DT-${Math.random().toString(36).substring(2, 5).toUpperCase()}-${Math.random().toString(36).substring(2, 5).toUpperCase()}`;
+  session = {
+    syncId: id(),
+    syncCode: fallbackCode,
+    autoSyncEnabled: true,
+    lastModifiedAt: new Date().toISOString(),
+  };
+  await setSyncSession(session);
+  return session;
+}
+
+/**
+ * Pushes all current local data to the Cloud Vault
+ */
+export async function pushCloudBackup(): Promise<{ success: boolean; message?: string; session?: SyncSession }> {
+  const session = await initOrGetSyncSession();
+  const [accounts, transactions, wage, budget] = await Promise.all([
+    getAccounts(),
+    getTransactions(),
+    getWageSettings(),
+    getBudgetSettings(),
+  ]);
+
+  const nowIso = new Date().toISOString();
+  notifySync("syncing", session);
+
+  try {
+    const backendUrl = getBackendUrl();
+    const res = await fetch(`${backendUrl}/api/sync/push`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sync_id: session.syncId,
+        sync_code: session.syncCode,
+        accounts,
+        transactions,
+        wage_settings: wage,
+        budget_settings: budget,
+        last_modified: nowIso,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      notifySync("error", session);
+      return { success: false, message: err.detail || "Cloud backup failed" };
+    }
+
+    const data = await res.json();
+    const updatedSession: SyncSession = {
+      ...session,
+      syncCode: data.sync_code || session.syncCode,
+      lastSyncedAt: data.last_modified || nowIso,
+    };
+    await setSyncSession(updatedSession);
+    notifySync("synced", updatedSession);
+    return { success: true, session: updatedSession, message: "Cloud backup completed successfully" };
+  } catch (e: any) {
+    notifySync("offline", session);
+    return { success: false, message: e.message || "Network offline, will sync when reconnected" };
+  }
+}
+
+/**
+ * Pulls and restores cloud data onto this phone using Sync Code or ID
+ */
+export async function pullCloudRestore(
+  syncCodeOrKey: string
+): Promise<{ success: boolean; message?: string; session?: SyncSession }> {
+  if (!syncCodeOrKey.trim()) {
+    return { success: false, message: "Please enter a valid Sync Code" };
+  }
+
+  notifySync("syncing", null);
+  const backendUrl = getBackendUrl();
+
+  try {
+    const res = await fetch(`${backendUrl}/api/sync/pull?sync_key=${encodeURIComponent(syncCodeOrKey.trim())}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      notifySync("error", null);
+      return { success: false, message: err.detail || "Vault not found. Check your Sync Code." };
+    }
+
+    const data = await res.json();
+    if (data.accounts) await setAccounts(data.accounts, false);
+    if (data.transactions) await setTransactions(data.transactions, false);
+    if (data.wage_settings) await setWageSettings(data.wage_settings, false);
+    if (data.budget_settings) await setBudgetSettings(data.budget_settings, false);
+    await AsyncStorage.setItem(K_SEED, "1");
+
+    const newSession: SyncSession = {
+      syncId: data.sync_id,
+      syncCode: data.sync_code,
+      lastSyncedAt: data.last_modified || new Date().toISOString(),
+      autoSyncEnabled: true,
+    };
+    await setSyncSession(newSession);
+    notifySync("synced", newSession);
+
+    return {
+      success: true,
+      session: newSession,
+      message: `Restored ${data.accounts?.length || 0} accounts & ${data.transactions?.length || 0} transactions!`,
+    };
+  } catch (e: any) {
+    notifySync("error", null);
+    return { success: false, message: e.message || "Could not connect to server to restore data" };
+  }
+}
+
+/**
+ * Merges cloud data with local data (two-way merge)
+ */
+export async function mergeWithCloud(): Promise<{ success: boolean; message?: string }> {
+  const session = await initOrGetSyncSession();
+  const [accounts, transactions, wage, budget] = await Promise.all([
+    getAccounts(),
+    getTransactions(),
+    getWageSettings(),
+    getBudgetSettings(),
+  ]);
+
+  notifySync("syncing", session);
+  const backendUrl = getBackendUrl();
+
+  try {
+    const res = await fetch(`${backendUrl}/api/sync/merge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sync_id: session.syncId,
+        sync_code: session.syncCode,
+        accounts,
+        transactions,
+        wage_settings: wage,
+        budget_settings: budget,
+        last_modified: new Date().toISOString(),
+      }),
+    });
+
+    if (!res.ok) {
+      notifySync("offline", session);
+      return { success: false, message: "Sync merge failed" };
+    }
+
+    const data = await res.json();
+    if (data.accounts) await setAccounts(data.accounts, false);
+    if (data.transactions) await setTransactions(data.transactions, false);
+    if (data.wage_settings) await setWageSettings(data.wage_settings, false);
+    if (data.budget_settings) await setBudgetSettings(data.budget_settings, false);
+
+    const updatedSession: SyncSession = {
+      ...session,
+      syncCode: data.sync_code || session.syncCode,
+      lastSyncedAt: data.last_modified,
+    };
+    await setSyncSession(updatedSession);
+    notifySync("synced", updatedSession);
+    return { success: true, message: "Synced with Cloud Vault" };
+  } catch (e: any) {
+    notifySync("offline", session);
+    return { success: false, message: e.message || "Offline" };
+  }
+}
+
+function scheduleAutoSync() {
+  if (autoSyncTimeout) clearTimeout(autoSyncTimeout);
+  autoSyncTimeout = setTimeout(() => {
+    pushCloudBackup().catch(() => {});
+  }, 1500); // Debounced 1.5s
+}
+
+// ---------- Data Accessors & Mutations ----------
 
 export async function getWageSettings(): Promise<WageSettings> {
   const raw = await AsyncStorage.getItem(K_WAGE);
@@ -45,8 +314,9 @@ export async function getWageSettings(): Promise<WageSettings> {
   }
 }
 
-export async function setWageSettings(w: WageSettings) {
+export async function setWageSettings(w: WageSettings, triggerSync = true) {
   await AsyncStorage.setItem(K_WAGE, JSON.stringify(w));
+  if (triggerSync) await touchModified();
 }
 
 export async function getBudgetSettings(): Promise<BudgetSettings> {
@@ -59,12 +329,9 @@ export async function getBudgetSettings(): Promise<BudgetSettings> {
   }
 }
 
-export async function setBudgetSettings(b: BudgetSettings) {
+export async function setBudgetSettings(b: BudgetSettings, triggerSync = true) {
   await AsyncStorage.setItem(K_BUDGET, JSON.stringify(b));
-}
-
-function id() {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+  if (triggerSync) await touchModified();
 }
 
 export async function getAccounts(): Promise<Account[]> {
@@ -78,13 +345,14 @@ export async function getAccounts(): Promise<Account[]> {
     }
   }
   if (modified) {
-    await setAccounts(list);
+    await setAccounts(list, false);
   }
   return list;
 }
 
-export async function setAccounts(accs: Account[]) {
+export async function setAccounts(accs: Account[], triggerSync = true) {
   await AsyncStorage.setItem(K_ACCOUNTS, JSON.stringify(accs));
+  if (triggerSync) await touchModified();
 }
 
 export async function upsertAccount(a: Account) {
@@ -106,8 +374,9 @@ export async function getTransactions(): Promise<Transaction[]> {
   return list.sort((a, b) => (a.date < b.date ? 1 : -1));
 }
 
-export async function setTransactions(list: Transaction[]) {
+export async function setTransactions(list: Transaction[], triggerSync = true) {
   await AsyncStorage.setItem(K_TXNS, JSON.stringify(list));
+  if (triggerSync) await touchModified();
 }
 
 export async function addTransaction(t: Omit<Transaction, "id" | "createdAt">) {
@@ -118,7 +387,7 @@ export async function addTransaction(t: Omit<Transaction, "id" | "createdAt">) {
     createdAt: new Date().toISOString(),
   };
   list.unshift(tx);
-  await setTransactions(list);
+  await setTransactions(list, false);
 
   // update account balance
   const accs = await getAccounts();
@@ -126,21 +395,43 @@ export async function addTransaction(t: Omit<Transaction, "id" | "createdAt">) {
   if (idx >= 0) {
     const acc = accs[idx];
     if (isLiabilityAccount(acc.type)) {
-      // Spending increases debt on credit card or loan
       acc.balance = +(acc.balance + t.amount).toFixed(2);
     } else {
-      // Spending decreases cash/bank/FD balance
       acc.balance = +(acc.balance - t.amount).toFixed(2);
     }
-    await setAccounts(accs);
+    await setAccounts(accs, false);
   }
+
+  await touchModified();
   return tx;
 }
 
 export async function addManyTransactions(txns: Omit<Transaction, "id" | "createdAt">[]) {
+  const list = await getTransactions();
+  const accs = await getAccounts();
+
   for (const t of txns) {
-    await addTransaction(t);
+    const tx: Transaction = {
+      ...t,
+      id: id(),
+      createdAt: new Date().toISOString(),
+    };
+    list.unshift(tx);
+
+    const idx = accs.findIndex((a) => a.id === t.accountId);
+    if (idx >= 0) {
+      const acc = accs[idx];
+      if (isLiabilityAccount(acc.type)) {
+        acc.balance = +(acc.balance + t.amount).toFixed(2);
+      } else {
+        acc.balance = +(acc.balance - t.amount).toFixed(2);
+      }
+    }
   }
+
+  await setTransactions(list, false);
+  await setAccounts(accs, false);
+  await touchModified();
 }
 
 export async function updateTransaction(updated: Transaction) {
@@ -150,7 +441,7 @@ export async function updateTransaction(updated: Transaction) {
     const old = list[idx];
     const diff = updated.amount - old.amount;
     list[idx] = updated;
-    await setTransactions(list);
+    await setTransactions(list, false);
 
     if (diff !== 0) {
       const accs = await getAccounts();
@@ -162,9 +453,10 @@ export async function updateTransaction(updated: Transaction) {
         } else {
           acc.balance = +(acc.balance - diff).toFixed(2);
         }
-        await setAccounts(accs);
+        await setAccounts(accs, false);
       }
     }
+    await touchModified();
   }
 }
 
@@ -173,7 +465,7 @@ export async function deleteTransaction(idToRemove: string) {
   const target = list.find((t) => t.id === idToRemove);
   if (!target) return;
 
-  await setTransactions(list.filter((t) => t.id !== idToRemove));
+  await setTransactions(list.filter((t) => t.id !== idToRemove), false);
   const accs = await getAccounts();
   const idx = accs.findIndex((a) => a.id === target.accountId);
   if (idx >= 0) {
@@ -183,13 +475,77 @@ export async function deleteTransaction(idToRemove: string) {
     } else {
       acc.balance = +(acc.balance + target.amount).toFixed(2);
     }
-    await setAccounts(accs);
+    await setAccounts(accs, false);
+  }
+  await touchModified();
+}
+
+// ---------- File Export & Import ----------
+
+export async function exportBackupJson(): Promise<string> {
+  const session = await getSyncSession();
+  const [accounts, transactions, wage, budget] = await Promise.all([
+    getAccounts(),
+    getTransactions(),
+    getWageSettings(),
+    getBudgetSettings(),
+  ]);
+
+  const snapshot: VaultSnapshot = {
+    syncId: session?.syncId,
+    syncCode: session?.syncCode,
+    accounts,
+    transactions,
+    wageSettings: wage,
+    budgetSettings: budget,
+    lastModified: new Date().toISOString(),
+    appVersion: "1.0.0",
+  };
+
+  return JSON.stringify(snapshot, null, 2);
+}
+
+export async function importBackupJson(rawJson: string): Promise<{ success: boolean; message?: string }> {
+  try {
+    const data = JSON.parse(rawJson);
+    if (!data.accounts || !Array.isArray(data.accounts)) {
+      return { success: false, message: "Invalid backup format: missing accounts" };
+    }
+
+    if (data.accounts) await setAccounts(data.accounts, false);
+    if (data.transactions) await setTransactions(data.transactions, false);
+    if (data.wageSettings) await setWageSettings(data.wageSettings, false);
+    if (data.budgetSettings) await setBudgetSettings(data.budgetSettings, false);
+    await AsyncStorage.setItem(K_SEED, "1");
+
+    if (data.syncCode) {
+      await setSyncSession({
+        syncId: data.syncId || id(),
+        syncCode: data.syncCode,
+        lastSyncedAt: data.lastModified,
+        autoSyncEnabled: true,
+      });
+    }
+
+    await touchModified();
+    return {
+      success: true,
+      message: `Imported ${data.accounts.length} accounts & ${data.transactions?.length || 0} transactions!`,
+    };
+  } catch (e: any) {
+    return { success: false, message: `Failed to parse backup: ${e.message}` };
   }
 }
 
+// ---------- Seeding & Reset ----------
+
 export async function seedIfNeeded() {
   const done = await AsyncStorage.getItem(K_SEED);
-  if (done) return;
+  if (done) {
+    // Ensure session is initialized
+    initOrGetSyncSession().catch(() => {});
+    return;
+  }
 
   const accs: Account[] = [
     { id: id(), name: "Touch n Go eWallet", type: "ewallet", emoji: "📱", color: "#0066B3", balance: 128.5 },
@@ -199,7 +555,7 @@ export async function seedIfNeeded() {
     { id: id(), name: "Car Loan (Perodua)", type: "loan", emoji: "🚘", color: "#EF4444", balance: 18500.0, interestRate: 3.2, dueDay: 25, monthlyInstallment: 650.0, reminderEnabled: true },
     { id: id(), name: "Cash Wallet", type: "cash", emoji: "💵", color: "#34D399", balance: 80.0 },
   ];
-  await setAccounts(accs);
+  await setAccounts(accs, false);
 
   const today = new Date();
   const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -219,15 +575,19 @@ export async function seedIfNeeded() {
     { id: id(), amount: 25.9, category: "Groceries", accountId: accs[1].id, merchant: "Jaya Grocer", date: day(6), createdAt: new Date().toISOString() },
     { id: id(), amount: 45, category: "Shopping", accountId: accs[2].id, merchant: "Shopee", date: day(8), createdAt: new Date().toISOString() },
   ];
-  await setTransactions(sample);
-  await setBudgetSettings(DEFAULT_BUDGET);
+  await setTransactions(sample, false);
+  await setBudgetSettings(DEFAULT_BUDGET, false);
   await AsyncStorage.setItem(K_SEED, "1");
+
+  // Initial cloud registration and backup
+  initOrGetSyncSession().then(() => pushCloudBackup()).catch(() => {});
 }
 
 export async function resetAll() {
-  await AsyncStorage.multiRemove([K_ACCOUNTS, K_TXNS, K_SEED, K_WAGE, K_BUDGET]);
+  await AsyncStorage.multiRemove([K_ACCOUNTS, K_TXNS, K_SEED, K_WAGE, K_BUDGET, K_SYNC_SESSION, K_LAST_MODIFIED]);
 }
 
 export function newAccountId() {
   return id();
 }
+

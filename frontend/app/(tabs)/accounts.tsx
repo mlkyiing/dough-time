@@ -22,11 +22,13 @@ import {
   deleteAccount,
   getAccounts,
   getWageSettings,
+  initOrGetSyncSession,
   newAccountId,
   setWageSettings,
+  subscribeSyncStatus,
   upsertAccount,
 } from "@/src/store";
-import { Account, AccountType, isAssetAccount, isLiabilityAccount, WageSettings } from "@/src/types";
+import { Account, AccountType, isAssetAccount, isLiabilityAccount, SyncSession, SyncStatus, WageSettings } from "@/src/types";
 import { ACCOUNT_TEMPLATES, AccountTemplate } from "@/src/constants";
 import { amountToWorkHours, rm } from "@/src/format";
 
@@ -35,6 +37,7 @@ type TabFilter = "all" | "bank_ewallet" | "credit_card" | "fd" | "loan";
 import { LoanReminderModal } from "@/src/components/LoanReminderModal";
 import { EditAccountModal } from "@/src/components/EditAccountModal";
 import { AnimatedMascot } from "@/src/components/AnimatedMascot";
+import { CloudSyncModal } from "@/src/components/CloudSyncModal";
 
 export default function Accounts() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -51,6 +54,9 @@ export default function Accounts() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerCategory, setPickerCategory] = useState<"bank_ewallet" | "credit_card" | "fd" | "loan">("bank_ewallet");
   const [wageModalOpen, setWageModalOpen] = useState(false);
+  const [syncModalOpen, setSyncModalOpen] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
+  const [syncSession, setSyncSession] = useState<SyncSession | null>(null);
   const [tempSalary, setTempSalary] = useState("4500");
   const [tempHours, setTempHours] = useState("40");
 
@@ -62,14 +68,22 @@ export default function Accounts() {
   const [customRate, setCustomRate] = useState("");
 
   const load = useCallback(async () => {
-    const [a, w] = await Promise.all([getAccounts(), getWageSettings()]);
+    const [a, w, sess] = await Promise.all([getAccounts(), getWageSettings(), initOrGetSyncSession()]);
     setAccounts(a);
     setWage(w);
+    setSyncSession(sess);
     setTempSalary(String(w.monthlySalary));
     setTempHours(String(w.hoursPerWeek));
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    load();
+    const unsub = subscribeSyncStatus((st, sess) => {
+      setSyncStatus(st);
+      if (sess) setSyncSession(sess);
+    });
+    return () => unsub();
+  }, [load]));
 
   const handleSaveWage = async () => {
     const salary = parseFloat(tempSalary) || 0;
@@ -221,6 +235,53 @@ export default function Accounts() {
             </View>
           </View>
         </View>
+
+        {/* Cloud Vault & Phone Backup Banner */}
+        <Pressable
+          style={({ pressed }) => [styles.cloudVaultBanner, pressed && { opacity: 0.92, transform: [{ scale: 0.99 }] }]}
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            setSyncModalOpen(true);
+          }}
+        >
+          <View style={styles.cloudVaultLeft}>
+            <View style={styles.cloudVaultIconWrap}>
+              <Ionicons
+                name={
+                  syncStatus === "syncing"
+                    ? "sync"
+                    : syncStatus === "offline"
+                    ? "cloud-offline"
+                    : "cloud-done"
+                }
+                size={22}
+                color={colors.brandPrimary}
+              />
+            </View>
+            <View style={{ flex: 1, gap: 2 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={styles.cloudVaultTitle}>Cloud Vault & Phone Transfer</Text>
+                <View
+                  style={[
+                    styles.syncDotSmall,
+                    {
+                      backgroundColor:
+                        syncStatus === "syncing"
+                          ? "#F59E0B"
+                          : syncStatus === "offline"
+                          ? "#94A3B8"
+                          : "#10B981",
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={styles.cloudVaultSub}>
+                {syncSession?.syncCode ? `Sync Code: ${syncSession.syncCode} · Tap to manage` : "Auto-backup enabled"}
+              </Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.onSurfaceSecondary} />
+        </Pressable>
 
         {/* Wage Profile Quick Pill */}
         <Pressable
@@ -596,6 +657,13 @@ export default function Accounts() {
           </View>
         </View>
       </Modal>
+
+      {/* Cloud Sync Modal */}
+      <CloudSyncModal
+        visible={syncModalOpen}
+        onClose={() => setSyncModalOpen(false)}
+        onDataRestored={load}
+      />
     </SafeAreaView>
   );
 }
@@ -633,11 +701,51 @@ const styles = StyleSheet.create({
   netWorthCard: {
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.lg,
-    padding: spacing.lg,
+    padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadow.card,
+    borderColor: colors.borderStrong,
+    ...shadow.soft,
+  },
+  cloudVaultBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#F0FDF4",
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1.5,
+    borderColor: "#BBF7D0",
+    ...shadow.soft,
+  },
+  cloudVaultLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  cloudVaultIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#DCFCE7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cloudVaultTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: colors.onSurface,
+  },
+  cloudVaultSub: {
+    fontSize: 11,
+    color: colors.onSurfaceSecondary,
+  },
+  syncDotSmall: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   nwRow: {
     flexDirection: "row",

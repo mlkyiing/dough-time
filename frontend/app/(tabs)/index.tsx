@@ -23,11 +23,13 @@ import {
   getBudgetSettings,
   getTransactions,
   getWageSettings,
+  initOrGetSyncSession,
   seedIfNeeded,
   setBudgetSettings,
   setWageSettings,
+  subscribeSyncStatus,
 } from "@/src/store";
-import { Account, BudgetSettings, isAssetAccount, isLiabilityAccount, Transaction, WageSettings } from "@/src/types";
+import { Account, BudgetSettings, isAssetAccount, isLiabilityAccount, SyncSession, SyncStatus, Transaction, WageSettings } from "@/src/types";
 import {
   amountToWorkHours,
   formatTimeCost,
@@ -39,6 +41,7 @@ import {
 import { SwipeableTxnRow } from "@/src/components/SwipeableTxnRow";
 import { TransactionDetailModal } from "@/src/components/TransactionDetailModal";
 import { AnimatedMascot } from "@/src/components/AnimatedMascot";
+import { CloudSyncModal } from "@/src/components/CloudSyncModal";
 
 export default function HomeDashboard() {
   const router = useRouter();
@@ -60,6 +63,9 @@ export default function HomeDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [wageModalOpen, setWageModalOpen] = useState(false);
   const [budgetModalOpen, setBudgetModalOpen] = useState(false);
+  const [syncModalOpen, setSyncModalOpen] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
+  const [syncSession, setSyncSession] = useState<SyncSession | null>(null);
   const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null);
   const [tempSalary, setTempSalary] = useState("4500");
   const [tempHours, setTempHours] = useState("40");
@@ -67,16 +73,18 @@ export default function HomeDashboard() {
 
   const loadData = useCallback(async () => {
     await seedIfNeeded();
-    const [accs, txns, w, b] = await Promise.all([
+    const [accs, txns, w, b, sess] = await Promise.all([
       getAccounts(),
       getTransactions(),
       getWageSettings(),
       getBudgetSettings(),
+      initOrGetSyncSession(),
     ]);
     setAccounts(accs);
     setTransactions(txns);
     setWage(w);
     setBudget(b);
+    setSyncSession(sess);
     setTempSalary(String(w.monthlySalary));
     setTempHours(String(w.hoursPerWeek));
     setTempBudgetLimit(String(b.monthlyOverallLimit));
@@ -85,6 +93,11 @@ export default function HomeDashboard() {
   useFocusEffect(
     useCallback(() => {
       loadData();
+      const unsub = subscribeSyncStatus((st, sess) => {
+        setSyncStatus(st);
+        if (sess) setSyncSession(sess);
+      });
+      return () => unsub();
     }, [loadData])
   );
 
@@ -187,17 +200,53 @@ export default function HomeDashboard() {
               <Text style={styles.appTitle}>DoughTime</Text>
             </View>
           </View>
-          <Pressable
-            testID="scan-ocr-btn"
-            style={({ pressed }) => [styles.scanBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }]}
-            onPress={() => {
-              Haptics.selectionAsync().catch(() => {});
-              router.push("/scan");
-            }}
-          >
-            <Ionicons name="scan-outline" size={18} color={colors.onBrandPrimary} />
-            <Text style={styles.scanBtnText}>Scan</Text>
-          </Pressable>
+          <View style={styles.headerRightActions}>
+            <Pressable
+              testID="cloud-sync-btn"
+              style={({ pressed }) => [styles.cloudSyncBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] }]}
+              onPress={() => {
+                Haptics.selectionAsync().catch(() => {});
+                setSyncModalOpen(true);
+              }}
+            >
+              <Ionicons
+                name={
+                  syncStatus === "syncing"
+                    ? "sync-outline"
+                    : syncStatus === "offline"
+                    ? "cloud-offline-outline"
+                    : "cloud-done-outline"
+                }
+                size={18}
+                color={syncStatus === "offline" ? colors.onSurfaceSecondary : colors.brandPrimary}
+              />
+              <View
+                style={[
+                  styles.syncBadgeDot,
+                  {
+                    backgroundColor:
+                      syncStatus === "syncing"
+                        ? "#F59E0B"
+                        : syncStatus === "offline"
+                        ? "#94A3B8"
+                        : "#10B981",
+                  },
+                ]}
+              />
+            </Pressable>
+
+            <Pressable
+              testID="scan-ocr-btn"
+              style={({ pressed }) => [styles.scanBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }]}
+              onPress={() => {
+                Haptics.selectionAsync().catch(() => {});
+                router.push("/scan");
+              }}
+            >
+              <Ionicons name="scan-outline" size={18} color={colors.onBrandPrimary} />
+              <Text style={styles.scanBtnText}>Scan</Text>
+            </Pressable>
+          </View>
         </View>
 
         {/* Wage Profile Banner */}
@@ -592,6 +641,13 @@ export default function HomeDashboard() {
           </View>
         </View>
       </Modal>
+
+      {/* Cloud Sync & Phone Backup Modal */}
+      <CloudSyncModal
+        visible={syncModalOpen}
+        onClose={() => setSyncModalOpen(false)}
+        onDataRestored={loadData}
+      />
     </SafeAreaView>
   );
 }
@@ -634,6 +690,30 @@ const styles = StyleSheet.create({
     color: colors.onSurface,
     letterSpacing: -0.5,
     marginTop: 1,
+  },
+  headerRightActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  cloudSyncBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  syncBadgeDot: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
   },
   scanBtn: {
     flexDirection: "row",

@@ -15,11 +15,15 @@ backend/.env
 frontend/.env
 *.env.local
 
-# Python
+# Python & Databases
 __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+*.db
+*.sqlite
+*.sqlite3
+backend/*.db
 
 # OS metadata
 .DS_Store

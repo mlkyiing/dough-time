@@ -13,9 +13,32 @@ from datetime import datetime, timezone
 from pydantic import BaseModel
 import urllib.request
 import urllib.error
+import sqlite3
+import random
+import string
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
+
+# Cloud Sync Database
+DB_PATH = ROOT_DIR / "doughtime_cloud.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS vaults (
+            sync_id TEXT PRIMARY KEY,
+            sync_code TEXT UNIQUE,
+            data_json TEXT NOT NULL,
+            last_modified TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+init_db()
 
 # LLM API keys (Supports Gemini, OpenAI, or Emergent)
 GEMINI_API_KEY = (
@@ -36,8 +59,9 @@ api_router = APIRouter(prefix="/api")
 async def app_root():
     return {
         "status": "ok",
-        "message": "DoughTime backend is live!",
+        "message": "DoughTime backend & Cloud Sync is live!",
         "ai_status": "ready" if (GEMINI_API_KEY or OPENAI_API_KEY or EMERGENT_LLM_KEY) else "smart-fallback",
+        "cloud_sync": "enabled",
         "docs": "/docs"
     }
 
@@ -72,6 +96,45 @@ class InsightRequest(BaseModel):
 class InsightResponse(BaseModel):
     summary: str
     tips: List[str]
+
+# Cloud Sync Models
+class SyncRegisterRequest(BaseModel):
+    sync_id: Optional[str] = None
+    sync_code: Optional[str] = None
+
+class SyncRegisterResponse(BaseModel):
+    sync_id: str
+    sync_code: str
+    is_new: bool = False
+
+class VaultPushRequest(BaseModel):
+    sync_id: str
+    sync_code: Optional[str] = None
+    accounts: List[dict] = []
+    transactions: List[dict] = []
+    wage_settings: Optional[dict] = None
+    budget_settings: Optional[dict] = None
+    last_modified: Optional[str] = None
+
+class VaultMergeRequest(BaseModel):
+    sync_id: str
+    sync_code: Optional[str] = None
+    accounts: List[dict] = []
+    transactions: List[dict] = []
+    wage_settings: Optional[dict] = None
+    budget_settings: Optional[dict] = None
+    last_modified: Optional[str] = None
+
+class VaultDataResponse(BaseModel):
+    success: bool
+    sync_id: str
+    sync_code: str
+    accounts: List[dict] = []
+    transactions: List[dict] = []
+    wage_settings: Optional[dict] = None
+    budget_settings: Optional[dict] = None
+    last_modified: str
+    message: Optional[str] = None
 
 # ---------- Helpers ----------
 
@@ -445,6 +508,257 @@ async def insights(req: InsightRequest):
         logger.warning(f"insights error: {e}")
 
     return _generate_heuristic_insights(req.transactions)
+
+# ---------- Cloud Sync Helpers & Routes ----------
+
+def _normalize_sync_code(code: Optional[str]) -> Optional[str]:
+    if not code:
+        return None
+    clean = re.sub(r"[^A-Za-z0-9]", "", code).upper()
+    if clean.startswith("DT") and len(clean) >= 8:
+        return f"DT-{clean[2:5]}-{clean[5:8]}"
+    elif len(clean) == 6:
+        return f"DT-{clean[0:3]}-{clean[3:6]}"
+    return clean
+
+def _generate_unique_sync_code(conn: sqlite3.Connection) -> str:
+    chars = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+    for _ in range(50):
+        c1 = "".join(random.choices(chars, k=3))
+        c2 = "".join(random.choices(chars, k=3))
+        code = f"DT-{c1}-{c2}"
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM vaults WHERE sync_code = ?", (code,))
+        if not cur.fetchone():
+            return code
+    return f"DT-{uuid.uuid4().hex[:6].upper()}"
+
+def _fetch_vault_row(conn: sqlite3.Connection, query: str):
+    cur = conn.cursor()
+    norm_code = _normalize_sync_code(query)
+    # Check by sync_id, sync_code, or normalized sync_code
+    cur.execute(
+        "SELECT sync_id, sync_code, data_json, last_modified, created_at FROM vaults WHERE sync_id = ? OR sync_code = ? OR sync_code = ?",
+        (query, query, norm_code or query)
+    )
+    return cur.fetchone()
+
+@api_router.post("/sync/register", response_model=SyncRegisterResponse)
+async def sync_register(req: SyncRegisterRequest):
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        if req.sync_id or req.sync_code:
+            row = _fetch_vault_row(conn, req.sync_id or req.sync_code or "")
+            if row:
+                return SyncRegisterResponse(sync_id=row[0], sync_code=row[1], is_new=False)
+        
+        # Create new registration
+        new_sync_id = req.sync_id or str(uuid.uuid4())
+        new_sync_code = _normalize_sync_code(req.sync_code) if req.sync_code else _generate_unique_sync_code(conn)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        
+        empty_data = json.dumps({
+            "accounts": [],
+            "transactions": [],
+            "wage_settings": None,
+            "budget_settings": None,
+            "last_modified": now_iso
+        })
+        
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO vaults (sync_id, sync_code, data_json, last_modified, created_at) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(sync_id) DO UPDATE SET sync_code = excluded.sync_code",
+            (new_sync_id, new_sync_code, empty_data, now_iso, now_iso)
+        )
+        conn.commit()
+        return SyncRegisterResponse(sync_id=new_sync_id, sync_code=new_sync_code, is_new=True)
+    finally:
+        conn.close()
+
+@api_router.post("/sync/push", response_model=VaultDataResponse)
+async def sync_push(req: VaultPushRequest):
+    if not req.sync_id:
+        raise HTTPException(status_code=400, detail="sync_id is required")
+        
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        now_iso = req.last_modified or datetime.now(timezone.utc).isoformat()
+        row = _fetch_vault_row(conn, req.sync_id)
+        
+        sync_code = row[1] if row else (_normalize_sync_code(req.sync_code) or _generate_unique_sync_code(conn))
+        
+        vault_payload = {
+            "accounts": req.accounts,
+            "transactions": req.transactions,
+            "wage_settings": req.wage_settings,
+            "budget_settings": req.budget_settings,
+            "last_modified": now_iso,
+        }
+        
+        cur = conn.cursor()
+        if row:
+            cur.execute(
+                "UPDATE vaults SET data_json = ?, last_modified = ? WHERE sync_id = ?",
+                (json.dumps(vault_payload), now_iso, row[0])
+            )
+        else:
+            cur.execute(
+                "INSERT INTO vaults (sync_id, sync_code, data_json, last_modified, created_at) VALUES (?, ?, ?, ?, ?)",
+                (req.sync_id, sync_code, json.dumps(vault_payload), now_iso, now_iso)
+            )
+        conn.commit()
+        
+        return VaultDataResponse(
+            success=True,
+            sync_id=req.sync_id,
+            sync_code=sync_code,
+            accounts=req.accounts,
+            transactions=req.transactions,
+            wage_settings=req.wage_settings,
+            budget_settings=req.budget_settings,
+            last_modified=now_iso,
+            message="Cloud backup successful"
+        )
+    finally:
+        conn.close()
+
+@api_router.get("/sync/pull", response_model=VaultDataResponse)
+async def sync_pull(sync_key: str):
+    if not sync_key:
+        raise HTTPException(status_code=400, detail="sync_key parameter is required")
+        
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        row = _fetch_vault_row(conn, sync_key)
+        if not row:
+            raise HTTPException(status_code=404, detail="Sync vault not found. Please check your Sync Code.")
+            
+        sync_id, sync_code, data_json, last_modified, _ = row
+        data = json.loads(data_json)
+        
+        return VaultDataResponse(
+            success=True,
+            sync_id=sync_id,
+            sync_code=sync_code,
+            accounts=data.get("accounts", []),
+            transactions=data.get("transactions", []),
+            wage_settings=data.get("wage_settings"),
+            budget_settings=data.get("budget_settings"),
+            last_modified=last_modified,
+            message="Cloud restore successful"
+        )
+    finally:
+        conn.close()
+
+@api_router.post("/sync/merge", response_model=VaultDataResponse)
+async def sync_merge(req: VaultMergeRequest):
+    if not req.sync_id:
+        raise HTTPException(status_code=400, detail="sync_id is required")
+        
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        row = _fetch_vault_row(conn, req.sync_id)
+        now_iso = req.last_modified or datetime.now(timezone.utc).isoformat()
+        
+        if not row:
+            # First time sync: just push
+            sync_code = _normalize_sync_code(req.sync_code) or _generate_unique_sync_code(conn)
+            vault_payload = {
+                "accounts": req.accounts,
+                "transactions": req.transactions,
+                "wage_settings": req.wage_settings,
+                "budget_settings": req.budget_settings,
+                "last_modified": now_iso,
+            }
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO vaults (sync_id, sync_code, data_json, last_modified, created_at) VALUES (?, ?, ?, ?, ?)",
+                (req.sync_id, sync_code, json.dumps(vault_payload), now_iso, now_iso)
+            )
+            conn.commit()
+            return VaultDataResponse(
+                success=True,
+                sync_id=req.sync_id,
+                sync_code=sync_code,
+                accounts=req.accounts,
+                transactions=req.transactions,
+                wage_settings=req.wage_settings,
+                budget_settings=req.budget_settings,
+                last_modified=now_iso,
+                message="Cloud vault created and merged"
+            )
+            
+        sync_id, sync_code, data_json, cloud_last_mod, _ = row
+        cloud_data = json.loads(data_json)
+        
+        # Smart transaction merge: union by transaction id, sort descending by date
+        cloud_txns = {t.get("id"): t for t in cloud_data.get("transactions", []) if t.get("id")}
+        for t in req.transactions:
+            if t.get("id"):
+                cloud_txns[t["id"]] = t
+        merged_txns = sorted(list(cloud_txns.values()), key=lambda x: (x.get("date", ""), x.get("createdAt", "")), reverse=True)
+        
+        # Smart account merge: union by account id
+        cloud_accs = {a.get("id"): a for a in cloud_data.get("accounts", []) if a.get("id")}
+        for a in req.accounts:
+            if a.get("id"):
+                cloud_accs[a["id"]] = a
+        merged_accs = list(cloud_accs.values())
+        
+        merged_wage = req.wage_settings or cloud_data.get("wage_settings")
+        merged_budget = req.budget_settings or cloud_data.get("budget_settings")
+        
+        merged_payload = {
+            "accounts": merged_accs,
+            "transactions": merged_txns,
+            "wage_settings": merged_wage,
+            "budget_settings": merged_budget,
+            "last_modified": now_iso,
+        }
+        
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE vaults SET data_json = ?, last_modified = ? WHERE sync_id = ?",
+            (json.dumps(merged_payload), now_iso, sync_id)
+        )
+        conn.commit()
+        
+        return VaultDataResponse(
+            success=True,
+            sync_id=sync_id,
+            sync_code=sync_code,
+            accounts=merged_accs,
+            transactions=merged_txns,
+            wage_settings=merged_wage,
+            budget_settings=merged_budget,
+            last_modified=now_iso,
+            message="Merged with Cloud vault successfully"
+        )
+    finally:
+        conn.close()
+
+@api_router.get("/sync/status")
+async def sync_status(sync_key: str):
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        row = _fetch_vault_row(conn, sync_key)
+        if not row:
+            return {"exists": False, "message": "Vault not found"}
+        
+        sync_id, sync_code, data_json, last_modified, created_at = row
+        data = json.loads(data_json)
+        return {
+            "exists": True,
+            "sync_id": sync_id,
+            "sync_code": sync_code,
+            "last_modified": last_modified,
+            "created_at": created_at,
+            "transaction_count": len(data.get("transactions", [])),
+            "account_count": len(data.get("accounts", [])),
+        }
+    finally:
+        conn.close()
 
 app.include_router(api_router)
 
