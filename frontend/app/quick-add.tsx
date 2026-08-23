@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   Pressable,
   ScrollView,
@@ -25,11 +25,13 @@ import {
 
 export default function QuickAddModal() {
   const router = useRouter();
-  const [amountStr, setAmountStr] = useState("0");
-  const [category, setCategory] = useState<string>("Makan");
+  const params = useLocalSearchParams<{ amount?: string; category?: string; merchant?: string; note?: string }>();
+  
+  const [amountStr, setAmountStr] = useState(params.amount ? String(params.amount) : "0");
+  const [category, setCategory] = useState<string>(params.category || "Makan");
   const [accountId, setAccountId] = useState<string>("");
-  const [merchant, setMerchant] = useState<string>("");
-  const [note, setNote] = useState<string>("");
+  const [merchant, setMerchant] = useState<string>(params.merchant || "");
+  const [note, setNote] = useState<string>(params.note || "");
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [wage, setWage] = useState<WageSettings>({
     mode: "salary",
