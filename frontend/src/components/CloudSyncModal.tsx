@@ -21,6 +21,7 @@ import {
   getSyncSession,
   importBackupJson,
   initOrGetSyncSession,
+  mergeWithCloud,
   pullCloudRestore,
   pushCloudBackup,
   subscribeSyncStatus,
@@ -76,14 +77,23 @@ export function CloudSyncModal({ visible, onClose, onDataRestored }: Props) {
   const handleManualSync = async () => {
     setIsProcessing(true);
     Haptics.selectionAsync().catch(() => {});
-    const res = await pushCloudBackup();
+    const res = await mergeWithCloud();
     setIsProcessing(false);
     if (res.success) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      Alert.alert("Cloud Vault Synced! ☁️", "All your accounts, records, and settings are backed up safely.");
+      if (onDataRestored) onDataRestored();
+      if (Platform.OS === "web") {
+        window.alert("Cloud Vault Synced! ☁️ Any shortcut additions or changes are now live.");
+      } else {
+        Alert.alert("Cloud Vault Synced! ☁️", "All your accounts, shortcut records, and settings are synced safely.");
+      }
     } else {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-      Alert.alert("Sync Notice", res.message || "Could not sync to cloud. Offline changes are stored locally.");
+      if (Platform.OS === "web") {
+        window.alert(res.message || "Could not sync to cloud. Offline changes are stored locally.");
+      } else {
+        Alert.alert("Sync Notice", res.message || "Could not sync to cloud. Offline changes are stored locally.");
+      }
     }
   };
 

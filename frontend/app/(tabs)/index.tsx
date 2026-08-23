@@ -25,10 +25,12 @@ import {
   getTransactions,
   getWageSettings,
   initOrGetSyncSession,
+  mergeWithCloud,
   seedIfNeeded,
   setBudgetSettings,
   setWageSettings,
   subscribeSyncStatus,
+  updateTransaction,
 } from "@/src/store";
 import { Account, BudgetSettings, isAssetAccount, isLiabilityAccount, SyncSession, SyncStatus, Transaction, WageSettings } from "@/src/types";
 import {
@@ -98,6 +100,7 @@ export default function HomeDashboard() {
   useFocusEffect(
     useCallback(() => {
       loadData();
+      mergeWithCloud().then(() => loadData()).catch(() => {});
       const unsub = subscribeSyncStatus((st, sess) => {
         setSyncStatus(st);
         if (sess) setSyncSession(sess);
@@ -108,6 +111,7 @@ export default function HomeDashboard() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
+    await mergeWithCloud().catch(() => {});
     await loadData();
     setRefreshing(false);
   };
@@ -161,10 +165,24 @@ export default function HomeDashboard() {
     ]);
   };
 
+  const handleUpdateTxn = async (updated: Transaction) => {
+    await updateTransaction(updated);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    setSelectedTxn(null);
+    await loadData();
+  };
+
   // True Net Worth = Total Assets - Total Liabilities
   const totalAssets = accounts.filter(isAssetAccount).reduce((sum, a) => sum + a.balance, 0);
   const totalLiabilities = accounts.filter(isLiabilityAccount).reduce((sum, a) => sum + a.balance, 0);
   const netWorth = totalAssets - totalLiabilities;
+
+  const assetHours = amountToWorkHours(totalAssets, wage.hourlyRate);
+  const liabilityHours = amountToWorkHours(totalLiabilities, wage.hourlyRate);
+  const netWorthHours =
+    netWorth >= 0
+      ? amountToWorkHours(netWorth, wage.hourlyRate)
+      : -amountToWorkHours(Math.abs(netWorth), wage.hourlyRate);
 
   const thisMonth = monthKey(todayISO());
   const monthSpending = transactions
@@ -172,7 +190,6 @@ export default function HomeDashboard() {
     .reduce((sum, t) => sum + t.amount, 0);
 
   const monthWorkHours = amountToWorkHours(monthSpending, wage.hourlyRate);
-  const netWorthHours = amountToWorkHours(Math.max(0, netWorth), wage.hourlyRate);
   const bobaReaction = getBobaReaction(monthWorkHours);
 
   // Budget calculations & Segregated Bucket Analysis
@@ -371,11 +388,15 @@ export default function HomeDashboard() {
           {/* Breakdown Mini Badges: Assets vs Debt */}
           <View style={styles.assetsDebtRow}>
             <View style={styles.assetBadge}>
-              <Text style={styles.assetBadgeText}>Assets: +{rm(totalAssets)}</Text>
+              <Text style={styles.assetBadgeText}>
+                {viewMode === "money" ? `Assets: +${rm(totalAssets)}` : `Assets: +${assetHours.toFixed(1)}h`}
+              </Text>
             </View>
             {totalLiabilities > 0 && (
               <View style={styles.debtBadge}>
-                <Text style={styles.debtBadgeText}>Debt: -{rm(totalLiabilities)}</Text>
+                <Text style={styles.debtBadgeText}>
+                  {viewMode === "money" ? `Debt: -${rm(totalLiabilities)}` : `Debt: -${liabilityHours.toFixed(1)}h`}
+                </Text>
               </View>
             )}
           </View>
@@ -603,9 +624,11 @@ export default function HomeDashboard() {
         visible={!!selectedTxn}
         transaction={selectedTxn}
         account={accounts.find((a) => a.id === selectedTxn?.accountId)}
+        accounts={accounts}
         hourlyRate={wage.hourlyRate}
         onClose={() => setSelectedTxn(null)}
         onDelete={handleDeleteTxn}
+        onUpdate={handleUpdateTxn}
       />
 
       {/* Wage Settings Modal */}

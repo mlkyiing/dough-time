@@ -15,7 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { colors, radius, shadow, spacing } from "@/src/theme";
-import { deleteTransaction, getAccounts, getTransactions, getWageSettings, updateTransaction } from "@/src/store";
+import { deleteTransaction, getAccounts, getTransactions, getWageSettings, mergeWithCloud, updateTransaction } from "@/src/store";
 import { Account, Transaction, WageSettings } from "@/src/types";
 import { CATEGORIES } from "@/src/constants";
 import { amountToWorkHours, rm } from "@/src/format";
@@ -54,6 +54,7 @@ export default function Transactions() {
   useFocusEffect(
     useCallback(() => {
       load();
+      mergeWithCloud().then(() => load()).catch(() => {});
     }, [load])
   );
 

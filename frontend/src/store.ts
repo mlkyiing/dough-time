@@ -302,7 +302,7 @@ export async function mergeWithCloud(): Promise<{ success: boolean; message?: st
 function scheduleAutoSync() {
   if (autoSyncTimeout) clearTimeout(autoSyncTimeout);
   autoSyncTimeout = setTimeout(() => {
-    pushCloudBackup().catch(() => {});
+    mergeWithCloud().catch(() => {});
   }, 1500); // Debounced 1.5s
 }
 
@@ -597,7 +597,7 @@ export async function seedIfNeeded() {
   await AsyncStorage.setItem(K_SEED, "1");
 
   // Initial cloud registration and backup
-  initOrGetSyncSession().then(() => pushCloudBackup()).catch(() => {});
+  initOrGetSyncSession().then(() => mergeWithCloud()).catch(() => {});
 }
 
 export async function resetAll() {

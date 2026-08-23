@@ -183,7 +183,10 @@ export default function Accounts() {
   );
 
   const netWorth = totalAssets - totalLiabilities;
-  const netWorthHours = amountToWorkHours(Math.max(0, netWorth), wage.hourlyRate);
+  const netWorthHours =
+    netWorth >= 0
+      ? amountToWorkHours(netWorth, wage.hourlyRate)
+      : -amountToWorkHours(Math.abs(netWorth), wage.hourlyRate);
 
   const filteredAccounts = useMemo(() => {
     if (activeFilter === "all") return accounts;
@@ -213,7 +216,7 @@ export default function Accounts() {
         <View style={{ gap: 2 }}>
           <Text style={styles.title}>Accounts & Net Worth</Text>
           <Text style={styles.subtitle}>
-            Net Worth {rm(netWorth)} ({netWorthHours.toFixed(1)} hrs saved)
+            Net Worth {rm(netWorth)} ({netWorthHours >= 0 ? `+${netWorthHours.toFixed(1)}h work saved` : `${netWorthHours.toFixed(1)}h work`})
           </Text>
         </View>
         <Pressable
@@ -239,7 +242,7 @@ export default function Accounts() {
             <View style={{ flex: 1 }}>
               <Text style={{ fontWeight: "800", fontSize: 14, color: colors.onSurface }}>DoughTime Vault & Stash 🪙</Text>
               <Text style={{ fontWeight: "500", fontSize: 11, color: colors.onSurfaceSecondary }}>
-                True Net Worth: {rm(netWorth)} ({netWorthHours.toFixed(1)}h work saved)
+                True Net Worth: {rm(netWorth)} ({netWorthHours >= 0 ? `+${netWorthHours.toFixed(1)}h saved` : `${netWorthHours.toFixed(1)}h`})
               </Text>
             </View>
           </View>
