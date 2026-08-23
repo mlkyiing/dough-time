@@ -13,7 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { colors, radius, shadow, spacing } from "@/src/theme";
-import { Account, AllocationPreset, BudgetSettings, isAssetAccount, WageSettings } from "@/src/types";
+import { Account, AllocationPreset, BudgetSettings, BudgetSourceMode, isAssetAccount, WageSettings } from "@/src/types";
 import { amountToWorkHours, rm } from "@/src/format";
 import {
   analyzeAccountBudget,
@@ -44,6 +44,7 @@ export function SmartBudgetModal({
   );
 
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
+  const [sourceMode, setSourceMode] = useState<BudgetSourceMode>("liquid_balance");
   const [preset, setPreset] = useState<AllocationPreset>("balanced_50_30_20");
   const [needsLimit, setNeedsLimit] = useState("1300");
   const [comfortLimit, setComfortLimit] = useState("500");
@@ -58,29 +59,46 @@ export function SmartBudgetModal({
           : liquidAssetAccounts.map((a) => a.id);
       setSelectedAccountIds(defaultIds);
 
+      const mode = budget.budgetSourceMode || "liquid_balance";
+      setSourceMode(mode);
+
       const p = budget.allocationPreset || "balanced_50_30_20";
       setPreset(p);
 
-      const needs = budget.needsLimit || 1300;
-      const comfort = budget.comfortLimit || 500;
-      const savings = budget.savingsTarget || 200;
-
-      setNeedsLimit(String(needs));
-      setComfortLimit(String(comfort));
-      setSavingsTarget(String(savings));
-      setIsManualEdit(false);
+      if (budget.needsLimit && budget.comfortLimit && budget.allocationPreset === "custom") {
+        setNeedsLimit(String(budget.needsLimit));
+        setComfortLimit(String(budget.comfortLimit));
+        setSavingsTarget(String(budget.savingsTarget || 0));
+        setIsManualEdit(true);
+      } else {
+        const initialAnalysis = analyzeAccountBudget(accounts, wage, defaultIds, p, mode);
+        setNeedsLimit(String(initialAnalysis.recommendedNeeds));
+        setComfortLimit(String(initialAnalysis.recommendedComfort));
+        setSavingsTarget(String(initialAnalysis.recommendedSavings));
+        setIsManualEdit(false);
+      }
     }
-  }, [visible, budget, liquidAssetAccounts]);
+  }, [visible, budget, liquidAssetAccounts, accounts, wage]);
 
   const analysis = useMemo(() => {
-    return analyzeAccountBudget(accounts, wage, selectedAccountIds, preset);
-  }, [accounts, wage, selectedAccountIds, preset]);
+    return analyzeAccountBudget(accounts, wage, selectedAccountIds, preset, sourceMode);
+  }, [accounts, wage, selectedAccountIds, preset, sourceMode]);
+
+  const switchSourceMode = (newMode: BudgetSourceMode) => {
+    setSourceMode(newMode);
+    setIsManualEdit(false);
+    const newAnalysis = analyzeAccountBudget(accounts, wage, selectedAccountIds, preset, newMode);
+    setNeedsLimit(String(newAnalysis.recommendedNeeds));
+    setComfortLimit(String(newAnalysis.recommendedComfort));
+    setSavingsTarget(String(newAnalysis.recommendedSavings));
+    Haptics.selectionAsync().catch(() => {});
+  };
 
   // When preset or accounts change, auto-fill recommended limits unless in manual edit mode
   const applyPresetAllocation = (newPreset: AllocationPreset) => {
     setPreset(newPreset);
     setIsManualEdit(false);
-    const newAnalysis = analyzeAccountBudget(accounts, wage, selectedAccountIds, newPreset);
+    const newAnalysis = analyzeAccountBudget(accounts, wage, selectedAccountIds, newPreset, sourceMode);
     setNeedsLimit(String(newAnalysis.recommendedNeeds));
     setComfortLimit(String(newAnalysis.recommendedComfort));
     setSavingsTarget(String(newAnalysis.recommendedSavings));
@@ -96,7 +114,7 @@ export function SmartBudgetModal({
     }
     setSelectedAccountIds(next);
     if (!isManualEdit) {
-      const newAnalysis = analyzeAccountBudget(accounts, wage, next, preset);
+      const newAnalysis = analyzeAccountBudget(accounts, wage, next, preset, sourceMode);
       setNeedsLimit(String(newAnalysis.recommendedNeeds));
       setComfortLimit(String(newAnalysis.recommendedComfort));
       setSavingsTarget(String(newAnalysis.recommendedSavings));
@@ -118,6 +136,7 @@ export function SmartBudgetModal({
     const updated: BudgetSettings = {
       ...budget,
       monthlyOverallLimit: totalOverallBudget,
+      budgetSourceMode: sourceMode,
       needsLimit: numNeeds,
       comfortLimit: numComfort,
       savingsTarget: numSavings,
@@ -157,67 +176,114 @@ export function SmartBudgetModal({
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent}
           >
+            {/* Budget Source Mode Toggle */}
+            <View style={styles.modeToggleContainer}>
+              <Text style={styles.modeToggleHeading}>Budget Base Source:</Text>
+              <View style={styles.modeToggleWrap}>
+                <Pressable
+                  style={[styles.modeToggleBtn, sourceMode === "liquid_balance" && styles.modeToggleBtnActive]}
+                  onPress={() => switchSourceMode("liquid_balance")}
+                >
+                  <Text style={[styles.modeToggleText, sourceMode === "liquid_balance" && styles.modeToggleTextActive]}>
+                    🏦 Liquid Accounts Cash
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.modeToggleBtn, sourceMode === "salary" && styles.modeToggleBtnActive]}
+                  onPress={() => switchSourceMode("salary")}
+                >
+                  <Text style={[styles.modeToggleText, sourceMode === "salary" && styles.modeToggleTextActive]}>
+                    💼 Monthly Salary (Net)
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
             {/* Account Liquidity & Commitments Card */}
             <View style={styles.liquidityCard}>
               <View style={styles.liquidityHeader}>
-                <Text style={styles.sectionHeaderTitle}>🏦 Active Spending Pool</Text>
-                <Text style={styles.liquiditySub}>Tap accounts to include</Text>
+                <Text style={styles.sectionHeaderTitle}>
+                  {sourceMode === "liquid_balance" ? "🏦 Active Spending Pool" : "💼 Monthly Income & Fixed Outflows"}
+                </Text>
+                <Text style={styles.liquiditySub}>
+                  {sourceMode === "liquid_balance" ? "Tap accounts to fund pool" : "Based on salary & loan dues"}
+                </Text>
               </View>
 
-              {/* Account chips */}
-              <View style={styles.accountChipsRow}>
-                {liquidAssetAccounts.map((acc) => {
-                  const active = selectedAccountIds.includes(acc.id);
-                  return (
-                    <Pressable
-                      key={acc.id}
-                      style={[styles.accountChip, active && styles.accountChipActive]}
-                      onPress={() => toggleAccount(acc.id)}
-                    >
-                      <Text style={{ fontSize: 16 }}>{acc.emoji}</Text>
-                      <Text
-                        style={[styles.accountChipText, active && styles.accountChipTextActive]}
-                        numberOfLines={1}
+              {/* Account chips (shown when liquid_balance mode) */}
+              {sourceMode === "liquid_balance" && (
+                <View style={styles.accountChipsRow}>
+                  {liquidAssetAccounts.map((acc) => {
+                    const active = selectedAccountIds.includes(acc.id);
+                    return (
+                      <Pressable
+                        key={acc.id}
+                        style={[styles.accountChip, active && styles.accountChipActive]}
+                        onPress={() => toggleAccount(acc.id)}
                       >
-                        {acc.name}
-                      </Text>
-                      <Text
-                        style={[styles.accountChipBal, active && styles.accountChipBalActive]}
-                      >
-                        {rm(acc.balance)}
-                      </Text>
-                      <Ionicons
-                        name={active ? "checkmark-circle" : "ellipse-outline"}
-                        size={14}
-                        color={active ? colors.brandPrimary : colors.onSurfaceSecondary}
-                      />
-                    </Pressable>
-                  );
-                })}
-              </View>
+                        <Text style={{ fontSize: 16 }}>{acc.emoji}</Text>
+                        <Text
+                          style={[styles.accountChipText, active && styles.accountChipTextActive]}
+                          numberOfLines={1}
+                        >
+                          {acc.name}
+                        </Text>
+                        <Text
+                          style={[styles.accountChipBal, active && styles.accountChipBalActive]}
+                        >
+                          {rm(acc.balance)}
+                        </Text>
+                        <Ionicons
+                          name={active ? "checkmark-circle" : "ellipse-outline"}
+                          size={14}
+                          color={active ? colors.brandPrimary : colors.onSurfaceSecondary}
+                        />
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
 
               {/* Cash Analysis summary */}
               <View style={styles.cashAnalysisRow}>
-                <View style={styles.cashStat}>
-                  <Text style={styles.cashStatLabel}>Liquid Cash Pool</Text>
-                  <Text style={styles.cashStatVal}>+{rm(analysis.totalLiquidBalance)}</Text>
-                </View>
-                {analysis.committedLiabilities > 0 && (
+                {sourceMode === "liquid_balance" ? (
                   <>
+                    <View style={styles.cashStat}>
+                      <Text style={styles.cashStatLabel}>Liquid Cash Pool</Text>
+                      <Text style={styles.cashStatVal}>+{rm(analysis.totalLiquidBalance)}</Text>
+                    </View>
                     <View style={styles.cashStatDivider} />
                     <View style={styles.cashStat}>
-                      <Text style={styles.cashStatLabel}>Loan Commitments</Text>
-                      <Text style={styles.cashStatDebt}>-{rm(analysis.committedLiabilities)}</Text>
+                      <Text style={styles.cashStatLabel}>Safe Spendable Pool</Text>
+                      <Text style={styles.cashStatNet}>
+                        {rm(analysis.effectiveSpendableBudget)}
+                      </Text>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.cashStat}>
+                      <Text style={styles.cashStatLabel}>Monthly Salary</Text>
+                      <Text style={styles.cashStatVal}>+{rm(analysis.monthlyIncome)}</Text>
+                    </View>
+                    {analysis.committedLiabilities > 0 && (
+                      <>
+                        <View style={styles.cashStatDivider} />
+                        <View style={styles.cashStat}>
+                          <Text style={styles.cashStatLabel}>Loan Dues</Text>
+                          <Text style={styles.cashStatDebt}>-{rm(analysis.committedLiabilities)}</Text>
+                        </View>
+                      </>
+                    )}
+                    <View style={styles.cashStatDivider} />
+                    <View style={styles.cashStat}>
+                      <Text style={styles.cashStatLabel}>Net Spendable Pool</Text>
+                      <Text style={styles.cashStatNet}>
+                        {rm(analysis.effectiveSpendableBudget)}
+                      </Text>
                     </View>
                   </>
                 )}
-                <View style={styles.cashStatDivider} />
-                <View style={styles.cashStat}>
-                  <Text style={styles.cashStatLabel}>Safe Spendable Pool</Text>
-                  <Text style={styles.cashStatNet}>
-                    {rm(analysis.effectiveSpendableBudget)}
-                  </Text>
-                </View>
               </View>
             </View>
 
@@ -445,6 +511,42 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.lg,
     paddingBottom: 40,
+  },
+  modeToggleContainer: {
+    gap: 6,
+  },
+  modeToggleHeading: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.onSurfaceSecondary,
+  },
+  modeToggleWrap: {
+    flexDirection: "row",
+    backgroundColor: colors.surfaceSecondary,
+    padding: 3,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    gap: 4,
+  },
+  modeToggleBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.sm,
+  },
+  modeToggleBtnActive: {
+    backgroundColor: colors.brandPrimary,
+    ...shadow.soft,
+  },
+  modeToggleText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.onSurfaceSecondary,
+  },
+  modeToggleTextActive: {
+    color: "#FFFFFF",
   },
   liquidityCard: {
     backgroundColor: colors.surfaceSecondary,

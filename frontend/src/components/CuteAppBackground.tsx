@@ -4,7 +4,7 @@ import { Image } from "expo-image";
 
 export function CuteAppBackground() {
   return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: "hidden" }]}>
       {/* Vibrant Soft Ambient Pastel Halos */}
       <View style={styles.topRightGlow} />
       <View style={styles.bottomLeftGlow} />

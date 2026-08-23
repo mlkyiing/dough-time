@@ -2,13 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { PieChart } from "react-native-gifted-charts";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
@@ -35,6 +36,7 @@ import { AnimatedMascot } from "@/src/components/AnimatedMascot";
 import { CuteAppBackground } from "@/src/components/CuteAppBackground";
 
 export default function Insights() {
+  const insets = useSafeAreaInsets();
   const [txns, setTxns] = useState<Transaction[]>([]);
   const [wage, setWage] = useState<WageSettings>({
     mode: "salary",
@@ -129,7 +131,13 @@ export default function Insights() {
   }, [txns.length]);
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView
+      style={[
+        styles.container,
+        { paddingTop: Platform.OS === "web" ? Math.max(insets.top, 14) : 0 },
+      ]}
+      edges={["top"]}
+    >
       <CuteAppBackground />
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: 130 }}
@@ -290,7 +298,7 @@ export default function Insights() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
+  container: { flex: 1, backgroundColor: colors.surface, overflow: "hidden" },
   title: {
     fontWeight: "800",
     fontSize: 24,

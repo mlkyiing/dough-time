@@ -12,7 +12,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
@@ -32,6 +32,8 @@ import { Account, AccountType, isAssetAccount, isLiabilityAccount, SyncSession, 
 import { ACCOUNT_TEMPLATES, AccountTemplate } from "@/src/constants";
 import { amountToWorkHours, rm } from "@/src/format";
 
+type TabFilter = "all" | "bank_ewallet" | "credit_card" | "fd" | "loan";
+
 import { LoanReminderModal } from "@/src/components/LoanReminderModal";
 import { EditAccountModal } from "@/src/components/EditAccountModal";
 import { AnimatedMascot } from "@/src/components/AnimatedMascot";
@@ -39,6 +41,7 @@ import { CloudSyncModal } from "@/src/components/CloudSyncModal";
 import { CuteAppBackground } from "@/src/components/CuteAppBackground";
 
 export default function Accounts() {
+  const insets = useSafeAreaInsets();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [reminderAccount, setReminderAccount] = useState<Account | null>(null);
@@ -197,7 +200,13 @@ export default function Accounts() {
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView
+      style={[
+        styles.container,
+        { paddingTop: Platform.OS === "web" ? Math.max(insets.top, 14) : 0 },
+      ]}
+      edges={["top"]}
+    >
       <CuteAppBackground />
       {/* Header */}
       <View style={styles.header}>
@@ -682,7 +691,7 @@ export default function Accounts() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
+  container: { flex: 1, backgroundColor: colors.surface, overflow: "hidden" },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",

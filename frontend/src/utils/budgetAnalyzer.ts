@@ -1,4 +1,4 @@
-import { Account, AllocationPreset, BudgetBucket, BudgetSettings, isAssetAccount, isLiabilityAccount, Transaction, WageSettings } from "../types";
+import { Account, AllocationPreset, BudgetBucket, BudgetSettings, BudgetSourceMode, isAssetAccount, isLiabilityAccount, Transaction, WageSettings } from "../types";
 
 export const NEEDS_CATEGORIES: string[] = [
   "Bills",
@@ -80,10 +80,12 @@ export interface AnalyzedBudgetPool {
   totalLiquidBalance: number;
   committedLiabilities: number;
   monthlyIncome: number;
+  rawPool: number;
   effectiveSpendableBudget: number;
   recommendedNeeds: number;
   recommendedComfort: number;
   recommendedSavings: number;
+  sourceMode: BudgetSourceMode;
 }
 
 /**
@@ -93,7 +95,8 @@ export function analyzeAccountBudget(
   accounts: Account[],
   wage: WageSettings,
   selectedAccountIds?: string[],
-  presetId: AllocationPreset = "balanced_50_30_20"
+  presetId: AllocationPreset = "balanced_50_30_20",
+  sourceMode: BudgetSourceMode = "liquid_balance"
 ): AnalyzedBudgetPool {
   const liquidAssets = accounts.filter(
     (a) => isAssetAccount(a) && (a.type === "bank" || a.type === "ewallet" || a.type === "cash")
@@ -116,8 +119,12 @@ export function analyzeAccountBudget(
 
   const monthlyIncome = wage.monthlySalary > 0 ? wage.monthlySalary : 3500;
 
-  // Base spending pool = monthly salary (or current liquid cash pool) minus fixed commitments
-  const rawPool = Math.max(800, monthlyIncome - committedLiabilities);
+  // Base spending pool:
+  // - "liquid_balance": based directly on the actual cash in the selected accounts
+  // - "salary": based on monthly salary minus mandatory fixed loan dues
+  const rawPool = sourceMode === "salary"
+    ? Math.max(0, monthlyIncome - committedLiabilities)
+    : (totalLiquidBalance > 0 ? totalLiquidBalance : Math.max(500, monthlyIncome - committedLiabilities));
 
   const preset =
     BUDGET_PRESETS.find((p) => p.id === presetId) || BUDGET_PRESETS[0];
@@ -132,10 +139,12 @@ export function analyzeAccountBudget(
     totalLiquidBalance,
     committedLiabilities,
     monthlyIncome,
+    rawPool,
     effectiveSpendableBudget,
     recommendedNeeds,
     recommendedComfort,
     recommendedSavings,
+    sourceMode,
   };
 }
 

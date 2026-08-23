@@ -55,8 +55,11 @@ export type AllocationPreset =
   | "frugal_60_15_25"
   | "custom";
 
+export type BudgetSourceMode = "liquid_balance" | "salary";
+
 export type BudgetSettings = {
   monthlyOverallLimit: number; // e.g. RM 2000
+  budgetSourceMode?: BudgetSourceMode; // "liquid_balance" (from checked accounts) or "salary" (monthly salary after loans)
   selectedAccountIds?: string[]; // Accounts used to fund this budget pool
   needsLimit?: number; // Must-Haves (Groceries, Petrol, Makan, Bills, Tolls, Telco)
   comfortLimit?: number; // Guilt-Free Comfort / "Nonsense" Money

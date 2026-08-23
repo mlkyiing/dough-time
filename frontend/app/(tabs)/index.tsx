@@ -12,7 +12,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
@@ -49,6 +49,7 @@ import { calculateBucketSpending } from "@/src/utils/budgetAnalyzer";
 
 export default function HomeDashboard() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [wage, setWage] = useState<WageSettings>({
@@ -202,7 +203,13 @@ export default function HomeDashboard() {
   const recentTxns = transactions.slice(0, 6);
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView
+      style={[
+        styles.container,
+        { paddingTop: Platform.OS === "web" ? Math.max(insets.top, 14) : 0 },
+      ]}
+      edges={["top"]}
+    >
       <CuteAppBackground />
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -689,7 +696,7 @@ export default function HomeDashboard() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
+  container: { flex: 1, backgroundColor: colors.surface, overflow: "hidden" },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",

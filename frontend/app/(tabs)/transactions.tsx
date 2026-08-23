@@ -10,7 +10,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
@@ -26,6 +26,7 @@ import { CuteAppBackground } from "@/src/components/CuteAppBackground";
 
 export default function Transactions() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [txns, setTxns] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [wage, setWage] = useState<WageSettings>({
@@ -104,7 +105,13 @@ export default function Transactions() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView
+      style={[
+        styles.container,
+        { paddingTop: Platform.OS === "web" ? Math.max(insets.top, 14) : 0 },
+      ]}
+      edges={["top"]}
+    >
       <CuteAppBackground />
       {/* Header */}
       <View style={styles.header}>
@@ -248,7 +255,7 @@ export default function Transactions() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
+  container: { flex: 1, backgroundColor: colors.surface, overflow: "hidden" },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
