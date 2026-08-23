@@ -227,7 +227,11 @@ export function CloudSyncModal({ visible, onClose, onDataRestored }: Props) {
 
   const handlePerformJsonImport = async () => {
     if (!importJsonText.trim()) {
-      Alert.alert("Paste JSON", "Please paste your exported backup JSON text.");
+      if (Platform.OS === "web") {
+        window.alert("Please paste your exported backup JSON text.");
+      } else {
+        Alert.alert("Paste JSON", "Please paste your exported backup JSON text.");
+      }
       return;
     }
 
@@ -237,20 +241,32 @@ export function CloudSyncModal({ visible, onClose, onDataRestored }: Props) {
 
     if (res.success) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      Alert.alert("Import Successful! 💾", res.message || "Data imported.", [
-        {
-          text: "Awesome",
-          onPress: () => {
-            setShowJsonImport(false);
-            setImportJsonText("");
-            if (onDataRestored) onDataRestored();
-            onClose();
+      if (Platform.OS === "web") {
+        window.alert(res.message || "Data imported successfully! 🎉");
+        setShowJsonImport(false);
+        setImportJsonText("");
+        if (onDataRestored) onDataRestored();
+        onClose();
+      } else {
+        Alert.alert("Import Successful! 💾", res.message || "Data imported.", [
+          {
+            text: "Awesome",
+            onPress: () => {
+              setShowJsonImport(false);
+              setImportJsonText("");
+              if (onDataRestored) onDataRestored();
+              onClose();
+            },
           },
-        },
-      ]);
+        ]);
+      }
     } else {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-      Alert.alert("Import Error", res.message || "Failed to parse backup JSON.");
+      if (Platform.OS === "web") {
+        window.alert(res.message || "Failed to parse backup JSON.");
+      } else {
+        Alert.alert("Import Error", res.message || "Failed to parse backup JSON.");
+      }
     }
   };
 
