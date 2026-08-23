@@ -246,7 +246,7 @@ export default function Transactions() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
+  container: { flex: 1, backgroundColor: "transparent" },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",

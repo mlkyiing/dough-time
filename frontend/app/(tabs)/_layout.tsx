@@ -5,6 +5,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { colors, shadow } from "@/src/theme";
 
+import { CuteAppBackground } from "@/src/components/CuteAppBackground";
+
 function CenterFab({ onPress, bottomInset }: { onPress: () => void; bottomInset: number }) {
   return (
     <View pointerEvents="box-none" style={[styles.fabWrap, { bottom: bottomInset + 12 }]}>
@@ -26,9 +28,11 @@ export default function TabsLayout() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
+      <CuteAppBackground />
       <Tabs
         screenOptions={{
           headerShown: false,
+          sceneStyle: { backgroundColor: "transparent" },
           tabBarActiveTintColor: colors.brandPrimary,
           tabBarInactiveTintColor: colors.onSurfaceSecondary,
           tabBarStyle: [

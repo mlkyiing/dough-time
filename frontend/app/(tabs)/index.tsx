@@ -43,6 +43,8 @@ import { SwipeableTxnRow } from "@/src/components/SwipeableTxnRow";
 import { TransactionDetailModal } from "@/src/components/TransactionDetailModal";
 import { AnimatedMascot } from "@/src/components/AnimatedMascot";
 import { CloudSyncModal } from "@/src/components/CloudSyncModal";
+import { SmartBudgetModal } from "@/src/components/SmartBudgetModal";
+import { calculateBucketSpending } from "@/src/utils/budgetAnalyzer";
 
 export default function HomeDashboard() {
   const router = useRouter();
@@ -124,13 +126,7 @@ export default function HomeDashboard() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   };
 
-  const handleSaveBudget = async () => {
-    const limit = parseFloat(tempBudgetLimit) || 2000;
-    const updated: BudgetSettings = {
-      ...budget,
-      monthlyOverallLimit: limit,
-      enabled: true,
-    };
+  const handleSaveBudget = async (updated: BudgetSettings) => {
     await setBudgetSettings(updated);
     setBudget(updated);
     setBudgetModalOpen(false);
@@ -177,13 +173,23 @@ export default function HomeDashboard() {
   const netWorthHours = amountToWorkHours(Math.max(0, netWorth), wage.hourlyRate);
   const bobaReaction = getBobaReaction(monthWorkHours);
 
-  // Budget calculations
+  // Budget calculations & Segregated Bucket Analysis
   const budgetLimit = budget.monthlyOverallLimit || 2000;
   const budgetWorkHours = amountToWorkHours(budgetLimit, wage.hourlyRate);
   const budgetUsedPct = Math.min(100, Math.round((monthSpending / (budgetLimit || 1)) * 100));
   const budgetRemaining = Math.max(0, budgetLimit - monthSpending);
   const budgetRemainingHours = amountToWorkHours(budgetRemaining, wage.hourlyRate);
   const isOverBudget = monthSpending > budgetLimit;
+
+  // Segregated Must-Haves vs Guilt-Free Comfort / Nonsense Funds
+  const bucketSpending = calculateBucketSpending(transactions, thisMonth);
+  const needsLimit = budget.needsLimit || Math.round(budgetLimit * 0.65);
+  const comfortLimit = budget.comfortLimit || Math.round(budgetLimit * 0.25);
+  const needsUsedPct = Math.min(100, Math.round((bucketSpending.needsSpent / (needsLimit || 1)) * 100));
+  const comfortUsedPct = Math.min(100, Math.round((bucketSpending.comfortSpent / (comfortLimit || 1)) * 100));
+  const comfortRemaining = Math.max(0, comfortLimit - bucketSpending.comfortSpent);
+  const comfortRemainingHours = amountToWorkHours(comfortRemaining, wage.hourlyRate);
+  const isComfortOver = bucketSpending.comfortSpent > comfortLimit;
 
   const currentDay = new Date().getDate();
   const upcomingRepayments = accounts.filter((a) => {
@@ -389,11 +395,11 @@ export default function HomeDashboard() {
           </View>
         </View>
 
-        {/* 🎯 Monthly Life Energy Budget Tracker Card */}
+        {/* 🎯 Smart Monthly Life Budget Tracker Card */}
         <View style={styles.budgetCard}>
           <View style={styles.budgetHeader}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Text style={{ fontSize: 20 }}>🎯</Text>
+              <Text style={{ fontSize: 22 }}>🎯</Text>
               <View>
                 <Text style={styles.budgetTitle}>Monthly Life Budget</Text>
                 <Text style={styles.budgetSub}>
@@ -408,11 +414,11 @@ export default function HomeDashboard() {
                 setBudgetModalOpen(true);
               }}
             >
-              <Text style={styles.budgetEditText}>Adjust</Text>
+              <Text style={styles.budgetEditText}>Configure</Text>
             </Pressable>
           </View>
 
-          {/* Progress Bar */}
+          {/* Overall Progress Bar */}
           <View style={styles.progressBarBg}>
             <View
               style={[
@@ -432,12 +438,70 @@ export default function HomeDashboard() {
           <View style={styles.budgetFooter}>
             <Text style={styles.budgetPctText}>
               {isOverBudget
-                ? `⚠️ Over budget by ${rm(monthSpending - budgetLimit)}`
-                : `${budgetUsedPct}% used (${budgetRemainingHours.toFixed(1)}h remaining)`}
+                ? `⚠️ Over total budget by ${rm(monthSpending - budgetLimit)}`
+                : `${budgetUsedPct}% used (${budgetRemainingHours.toFixed(1)}h work remaining)`}
             </Text>
             <Text style={styles.budgetSpentText}>
               {rm(monthSpending)} / {rm(budgetLimit)}
             </Text>
+          </View>
+
+          {/* Segregated Sub-Budget Meters: Needs vs Guilt-Free Comfort / Nonsense */}
+          <View style={styles.subBudgetsDivider} />
+          
+          <View style={styles.subBudgetsWrap}>
+            {/* 1. Must-Haves / Needs */}
+            <View style={styles.subBudgetCol}>
+              <View style={styles.subBudgetHead}>
+                <Text style={styles.subBudgetTitle}>🍞 Must-Haves</Text>
+                <Text style={styles.subBudgetVal}>
+                  {rm(bucketSpending.needsSpent)} / {rm(needsLimit)}
+                </Text>
+              </View>
+              <View style={styles.subProgressBg}>
+                <View
+                  style={[
+                    styles.subProgressFill,
+                    {
+                      width: `${needsUsedPct}%`,
+                      backgroundColor: needsUsedPct > 100 ? "#EF4444" : "#3B82F6",
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={styles.subBudgetMeta}>
+                Bills, Petrol, Makan · {Math.max(0, needsLimit - bucketSpending.needsSpent) === 0 ? "Exceeded" : `${rm(Math.max(0, needsLimit - bucketSpending.needsSpent))} left`}
+              </Text>
+            </View>
+
+            {/* 2. Guilt-Free Comfort & "Nonsense" Fund */}
+            <View style={[styles.subBudgetCol, styles.comfortSubBudgetCol]}>
+              <View style={styles.subBudgetHead}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <Text style={[styles.subBudgetTitle, { color: "#BE185D" }]}>🎁 Comfort Fund</Text>
+                  <Text style={styles.comfortBadge}>Guilt-free</Text>
+                </View>
+                <Text style={[styles.subBudgetVal, { color: "#BE185D" }]}>
+                  {rm(bucketSpending.comfortSpent)} / {rm(comfortLimit)}
+                </Text>
+              </View>
+              <View style={styles.subProgressBg}>
+                <View
+                  style={[
+                    styles.subProgressFill,
+                    {
+                      width: `${comfortUsedPct}%`,
+                      backgroundColor: isComfortOver ? "#EF4444" : "#EC4899",
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={[styles.subBudgetMeta, { color: isComfortOver ? "#EF4444" : "#9D174D" }]}>
+                {isComfortOver
+                  ? `Over comfort cap by ${rm(bucketSpending.comfortSpent - comfortLimit)}`
+                  : `✨ ${rm(comfortRemaining)} left for Pinduoduo & treats (${comfortRemainingHours.toFixed(1)}h work)!`}
+              </Text>
+            </View>
           </View>
         </View>
 
@@ -603,55 +667,15 @@ export default function HomeDashboard() {
         </View>
       </Modal>
 
-      {/* Budget Settings Modal */}
-      <Modal
+      {/* Smart Segregated Budget Modal */}
+      <SmartBudgetModal
         visible={budgetModalOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setBudgetModalOpen(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <Text style={{ fontSize: 24 }}>🎯</Text>
-                <Text style={styles.modalTitle}>Set Monthly Life Budget</Text>
-              </View>
-              <Pressable hitSlop={8} onPress={() => setBudgetModalOpen(false)}>
-                <Ionicons name="close" size={24} color={colors.onSurfaceSecondary} />
-              </Pressable>
-            </View>
-
-            <Text style={styles.modalSubtitle}>
-              Set a monthly spending ceiling. DoughTime will convert this budget into hours of work to keep you on track.
-            </Text>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Monthly Spending Limit (RM)</Text>
-              <TextInput
-                value={tempBudgetLimit}
-                onChangeText={setTempBudgetLimit}
-                keyboardType="decimal-pad"
-                inputMode="decimal"
-                style={styles.modalInput}
-                placeholder="e.g. 2000"
-                placeholderTextColor={colors.onSurfaceSecondary}
-              />
-            </View>
-
-            <View style={styles.calcPreviewBox}>
-              <Text style={styles.calcPreviewLabel}>Budget in Life Energy:</Text>
-              <Text style={styles.calcPreviewVal}>
-                {amountToWorkHours(parseFloat(tempBudgetLimit) || 0, wage.hourlyRate).toFixed(1)} hours of work
-              </Text>
-            </View>
-
-            <Pressable style={styles.saveWageBtn} onPress={handleSaveBudget}>
-              <Text style={styles.saveWageBtnText}>Save Budget</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+        budget={budget}
+        accounts={accounts}
+        wage={wage}
+        onClose={() => setBudgetModalOpen(false)}
+        onSave={handleSaveBudget}
+      />
 
       {/* Cloud Sync & Phone Backup Modal */}
       <CloudSyncModal
@@ -664,7 +688,7 @@ export default function HomeDashboard() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
+  container: { flex: 1, backgroundColor: "transparent" },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1006,6 +1030,66 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 11,
     color: colors.onSurface,
+  },
+  subBudgetsDivider: {
+    height: 1,
+    backgroundColor: colors.borderStrong,
+    marginVertical: 12,
+  },
+  subBudgetsWrap: {
+    gap: 10,
+  },
+  subBudgetCol: {
+    backgroundColor: colors.surface,
+    padding: 10,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    gap: 6,
+  },
+  comfortSubBudgetCol: {
+    backgroundColor: "#FFF1F2",
+    borderColor: "#FECDD3",
+  },
+  subBudgetHead: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  subBudgetTitle: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: colors.onSurface,
+  },
+  comfortBadge: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#BE185D",
+    backgroundColor: "#FCE7F3",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+    textTransform: "uppercase",
+  },
+  subBudgetVal: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.onSurface,
+  },
+  subProgressBg: {
+    height: 6,
+    backgroundColor: "#E2E8F0",
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  subProgressFill: {
+    height: "100%",
+    borderRadius: 3,
+  },
+  subBudgetMeta: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.onSurfaceSecondary,
   },
   reactionCard: {
     backgroundColor: colors.surfaceSecondary,

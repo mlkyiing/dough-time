@@ -7,8 +7,26 @@
     "userInterfaceStyle": "light",
     "scheme": "doughtime",
     "icon": "./assets/mascot.jpg",
+    "ios": {
+      "icon": "./assets/mascot.jpg",
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/mascot.jpg",
+        "backgroundColor": "#FFF5F8"
+      }
+    },
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "favicon": "./assets/mascot.jpg",
+      "themeColor": "#EC4899",
+      "backgroundColor": "#FFF5F8",
+      "display": "standalone",
+      "startUrl": "/",
+      "name": "DoughTime",
+      "shortName": "DoughTime",
+      "description": "Mindful Malaysian spending & life energy tracker with cute mascot"
     },
     "plugins": [
       "expo-router"

@@ -29,11 +29,15 @@ export const DEFAULT_WAGE: WageSettings = {
 
 export const DEFAULT_BUDGET: BudgetSettings = {
   monthlyOverallLimit: 2000,
+  needsLimit: 1300, // Must-Haves (Groceries, Petrol, Makan, Bills, Tolls, Telco)
+  comfortLimit: 500, // Guilt-Free Comfort / "Nonsense" Money (Pinduoduo, Shopee, Boba, Entertainment)
+  savingsTarget: 200, // Savings & Buffer
+  allocationPreset: "balanced_50_30_20",
   enabled: true,
   categoryBudgets: [
-    { category: "Makan", monthlyLimit: 600 },
-    { category: "Groceries", monthlyLimit: 400 },
-    { category: "Petrol", monthlyLimit: 250 },
+    { category: "Makan", monthlyLimit: 500 },
+    { category: "Groceries", monthlyLimit: 350 },
+    { category: "Petrol", monthlyLimit: 200 },
     { category: "Shopping", monthlyLimit: 300 },
     { category: "Bills", monthlyLimit: 250 },
   ],
@@ -323,7 +327,20 @@ export async function getBudgetSettings(): Promise<BudgetSettings> {
   const raw = await AsyncStorage.getItem(K_BUDGET);
   if (!raw) return DEFAULT_BUDGET;
   try {
-    return { ...DEFAULT_BUDGET, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw);
+    const overall = parsed.monthlyOverallLimit || DEFAULT_BUDGET.monthlyOverallLimit;
+    const needs = parsed.needsLimit ?? Math.round(overall * 0.65);
+    const comfort = parsed.comfortLimit ?? Math.round(overall * 0.25);
+    const savings = parsed.savingsTarget ?? Math.round(overall * 0.10);
+    return {
+      ...DEFAULT_BUDGET,
+      ...parsed,
+      monthlyOverallLimit: overall,
+      needsLimit: needs,
+      comfortLimit: comfort,
+      savingsTarget: savings,
+      allocationPreset: parsed.allocationPreset || "balanced_50_30_20",
+    };
   } catch {
     return DEFAULT_BUDGET;
   }

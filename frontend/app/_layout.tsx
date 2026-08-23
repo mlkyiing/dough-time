@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { useAppFonts } from "@/src/hooks/use-app-fonts";
 import { colors } from "@/src/theme";
+import { CuteAppBackground } from "@/src/components/CuteAppBackground";
 
 LogBox.ignoreAllLogs(true);
 SplashScreen.preventAutoHideAsync();
@@ -40,6 +41,38 @@ export default function RootLayout() {
         `;
         document.head.appendChild(style);
       }
+
+      // Ensure PWA & Apple Touch Icons use Mascot
+      const mascotIconUrl = "/assets/assets/mascot.jpg";
+      
+      const touchIconId = "doughtime-apple-touch-icon";
+      if (!document.getElementById(touchIconId)) {
+        const appleIcon = document.createElement("link");
+        appleIcon.id = touchIconId;
+        appleIcon.rel = "apple-touch-icon";
+        appleIcon.href = mascotIconUrl;
+        document.head.appendChild(appleIcon);
+
+        const appleIconPre = document.createElement("link");
+        appleIconPre.rel = "apple-touch-icon-precomposed";
+        appleIconPre.href = mascotIconUrl;
+        document.head.appendChild(appleIconPre);
+
+        const metaTitle = document.createElement("meta");
+        metaTitle.name = "apple-mobile-web-app-title";
+        metaTitle.content = "DoughTime";
+        document.head.appendChild(metaTitle);
+
+        const metaCapable = document.createElement("meta");
+        metaCapable.name = "apple-mobile-web-app-capable";
+        metaCapable.content = "yes";
+        document.head.appendChild(metaCapable);
+
+        const metaTheme = document.createElement("meta");
+        metaTheme.name = "theme-color";
+        metaTheme.content = "#EC4899";
+        document.head.appendChild(metaTheme);
+      }
     }
   }, []);
 
@@ -48,7 +81,8 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.surface }}>
       <View style={{ flex: 1, backgroundColor: colors.surface }}>
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }}>
+        <CuteAppBackground />
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "transparent" } }}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen
             name="quick-add"

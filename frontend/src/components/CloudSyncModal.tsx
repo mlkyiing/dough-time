@@ -164,14 +164,65 @@ export function CloudSyncModal({ visible, onClose, onDataRestored }: Props) {
     Haptics.selectionAsync().catch(() => {});
   };
 
+  const [jsonCopied, setJsonCopied] = useState(false);
+
   const handleCopyJson = async () => {
-    if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.clipboard) {
-      await navigator.clipboard.writeText(jsonString);
-      Alert.alert("Copied!", "Backup JSON copied to clipboard. Save it somewhere safe!");
-    } else {
-      Alert.alert("Backup Ready", "You can select and copy the text below.");
+    let success = false;
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(jsonString);
+        success = true;
+      }
+    } catch (e) {
+      console.warn("Clipboard API failed, trying fallback:", e);
     }
+
+    if (!success && Platform.OS === "web" && typeof document !== "undefined") {
+      try {
+        const textArea = document.createElement("textarea");
+        textArea.value = jsonString;
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        success = document.execCommand("copy");
+        document.body.removeChild(textArea);
+      } catch (err) {
+        console.error("Fallback copy failed:", err);
+      }
+    }
+
+    setJsonCopied(true);
+    setTimeout(() => setJsonCopied(false), 2500);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    if (Platform.OS === "web") {
+      window.alert("Backup JSON copied to clipboard! 📋");
+    } else {
+      Alert.alert("Copied! 📋", "Backup JSON copied to clipboard. Save it somewhere safe!");
+    }
+  };
+
+  const handleDownloadJson = () => {
+    if (Platform.OS === "web" && typeof window !== "undefined" && typeof document !== "undefined") {
+      try {
+        const blob = new Blob([jsonString], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `doughtime_backup_${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        window.alert("Backup file downloaded! 💾");
+        return;
+      } catch (e) {
+        console.error("Download failed:", e);
+      }
+    }
+    handleCopyJson();
   };
 
   const handlePerformJsonImport = async () => {
@@ -389,10 +440,22 @@ export function CloudSyncModal({ visible, onClose, onDataRestored }: Props) {
                 <View style={styles.jsonBox}>
                   <View style={styles.jsonHeader}>
                     <Text style={styles.jsonTitle}>Exported Data Bundle</Text>
-                    <Pressable onPress={handleCopyJson} style={styles.miniBtn}>
-                      <Ionicons name="copy-outline" size={14} color={colors.brandPrimary} />
-                      <Text style={styles.miniBtnText}>Copy Text</Text>
-                    </Pressable>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                      <Pressable onPress={handleDownloadJson} style={styles.miniBtn}>
+                        <Ionicons name="download" size={14} color={colors.brandPrimary} />
+                        <Text style={styles.miniBtnText}>Download .json</Text>
+                      </Pressable>
+                      <Pressable onPress={handleCopyJson} style={styles.miniBtn}>
+                        <Ionicons
+                          name={jsonCopied ? "checkmark" : "copy-outline"}
+                          size={14}
+                          color={jsonCopied ? "#10B981" : colors.brandPrimary}
+                        />
+                        <Text style={[styles.miniBtnText, jsonCopied && { color: "#10B981" }]}>
+                          {jsonCopied ? "Copied!" : "Copy Text"}
+                        </Text>
+                      </Pressable>
+                    </View>
                   </View>
                   <ScrollView style={styles.jsonScroll} nestedScrollEnabled={true}>
                     <Text style={styles.jsonCode}>{jsonString}</Text>

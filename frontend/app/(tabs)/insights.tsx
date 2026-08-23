@@ -288,7 +288,7 @@ export default function Insights() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
+  container: { flex: 1, backgroundColor: "transparent" },
   title: {
     fontWeight: "800",
     fontSize: 24,
