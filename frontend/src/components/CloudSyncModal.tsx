@@ -89,7 +89,55 @@ export function CloudSyncModal({ visible, onClose, onDataRestored }: Props) {
 
   const handleRestoreFromCloud = async () => {
     if (!inputSyncCode.trim()) {
-      Alert.alert("Enter Code", "Please enter the 6-digit Sync Code from your other phone.");
+      if (Platform.OS === "web") {
+        window.alert("Please enter the 6-digit Sync Code from your other phone.");
+      } else {
+        Alert.alert("Enter Code", "Please enter the 6-digit Sync Code from your other phone.");
+      }
+      return;
+    }
+
+    const doRestore = async () => {
+      setIsProcessing(true);
+      const res = await pullCloudRestore(inputSyncCode.trim());
+      setIsProcessing(false);
+
+      if (res.success) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        if (Platform.OS === "web") {
+          window.alert(res.message || "Your data has been restored.");
+          setInputSyncCode("");
+          if (onDataRestored) onDataRestored();
+          onClose();
+        } else {
+          Alert.alert("Restored Successfully! 🎉", res.message || "Your data has been restored.", [
+            {
+              text: "Great!",
+              onPress: () => {
+                setInputSyncCode("");
+                if (onDataRestored) onDataRestored();
+                onClose();
+              },
+            },
+          ]);
+        }
+      } else {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+        if (Platform.OS === "web") {
+          window.alert(res.message || "Could not find vault with this code.");
+        } else {
+          Alert.alert("Restore Failed", res.message || "Could not find vault with this code.");
+        }
+      }
+    };
+
+    if (Platform.OS === "web") {
+      const ok = typeof window !== "undefined"
+        ? window.confirm(`Restore data from Sync Code "${inputSyncCode.trim().toUpperCase()}"?`)
+        : true;
+      if (ok) {
+        await doRestore();
+      }
       return;
     }
 
@@ -101,28 +149,7 @@ export function CloudSyncModal({ visible, onClose, onDataRestored }: Props) {
         {
           text: "Restore Vault",
           style: "default",
-          onPress: async () => {
-            setIsProcessing(true);
-            const res = await pullCloudRestore(inputSyncCode.trim());
-            setIsProcessing(false);
-
-            if (res.success) {
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-              Alert.alert("Restored Successfully! 🎉", res.message || "Your data has been restored.", [
-                {
-                  text: "Great!",
-                  onPress: () => {
-                    setInputSyncCode("");
-                    if (onDataRestored) onDataRestored();
-                    onClose();
-                  },
-                },
-              ]);
-            } else {
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-              Alert.alert("Restore Failed", res.message || "Could not find vault with this code.");
-            }
-          },
+          onPress: doRestore,
         },
       ]
     );

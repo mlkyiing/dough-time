@@ -3,6 +3,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import {
   Alert,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -137,17 +138,27 @@ export default function HomeDashboard() {
   };
 
   const handleDeleteTxn = (id: string) => {
+    const doDelete = async () => {
+      await deleteTransaction(id);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      if (selectedTxn?.id === id) setSelectedTxn(null);
+      await loadData();
+    };
+
+    if (Platform.OS === "web") {
+      const ok = typeof window !== "undefined" ? window.confirm("Delete this transaction from your history?") : true;
+      if (ok) {
+        doDelete();
+      }
+      return;
+    }
+
     Alert.alert("Delete transaction?", "This will remove this record from your history.", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
         style: "destructive",
-        onPress: async () => {
-          await deleteTransaction(id);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-          if (selectedTxn?.id === id) setSelectedTxn(null);
-          await loadData();
-        },
+        onPress: doDelete,
       },
     ]);
   };

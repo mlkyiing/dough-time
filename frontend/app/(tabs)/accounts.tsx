@@ -150,9 +150,22 @@ export default function Accounts() {
   };
 
   const remove = (a: Account) => {
+    const doDelete = async () => {
+      await deleteAccount(a.id);
+      load();
+    };
+
+    if (Platform.OS === "web") {
+      const ok = typeof window !== "undefined" ? window.confirm(`Delete ${a.name}? Transactions linked to this account will stay.`) : true;
+      if (ok) {
+        doDelete();
+      }
+      return;
+    }
+
     Alert.alert(`Delete ${a.name}?`, "Transactions linked to this account will stay.", [
       { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: async () => { await deleteAccount(a.id); load(); } },
+      { text: "Delete", style: "destructive", onPress: doDelete },
     ]);
   };
 

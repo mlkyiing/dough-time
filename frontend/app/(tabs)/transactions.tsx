@@ -3,6 +3,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import {
   Alert,
   FlatList,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -69,17 +70,27 @@ export default function Transactions() {
   const chips = ["All", ...CATEGORIES.map((c) => c.key)];
 
   const handleDelete = (id: string) => {
+    const doDelete = async () => {
+      await deleteTransaction(id);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      if (selectedTxn?.id === id) setSelectedTxn(null);
+      await load();
+    };
+
+    if (Platform.OS === "web") {
+      const ok = typeof window !== "undefined" ? window.confirm("Delete this transaction? This can't be undone.") : true;
+      if (ok) {
+        doDelete();
+      }
+      return;
+    }
+
     Alert.alert("Delete transaction?", "This can't be undone.", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
         style: "destructive",
-        onPress: async () => {
-          await deleteTransaction(id);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-          if (selectedTxn?.id === id) setSelectedTxn(null);
-          await load();
-        },
+        onPress: doDelete,
       },
     ]);
   };

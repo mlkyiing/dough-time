@@ -86,6 +86,19 @@ export function EditAccountModal({
 
   const handleDelete = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+    const doDelete = () => {
+      onDelete(account.id);
+      onClose();
+    };
+
+    if (Platform.OS === "web") {
+      const ok = typeof window !== "undefined" ? window.confirm(`Are you sure you want to delete "${account.name}"?`) : true;
+      if (ok) {
+        doDelete();
+      }
+      return;
+    }
+
     Alert.alert(
       "Delete Account",
       `Are you sure you want to delete "${account.name}"? This will remove the account from your dashboard.`,
@@ -94,10 +107,7 @@ export function EditAccountModal({
         {
           text: "Delete Account",
           style: "destructive",
-          onPress: () => {
-            onDelete(account.id);
-            onClose();
-          },
+          onPress: doDelete,
         },
       ]
     );
