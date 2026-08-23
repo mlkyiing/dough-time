@@ -268,11 +268,11 @@ export function SmartBudgetModal({
                 {/* 1. Must-Haves & Needs */}
                 <View style={[styles.bucketCard, { borderLeftColor: "#3B82F6" }]}>
                   <View style={styles.bucketHeader}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <View style={styles.bucketTitleWrap}>
                       <Text style={{ fontSize: 22 }}>🍞</Text>
-                      <View>
-                        <Text style={styles.bucketTitle}>Must-Haves & Needs</Text>
-                        <Text style={styles.bucketSub}>Groceries, Petrol, Makan, Bills, Tolls</Text>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.bucketTitle} numberOfLines={1}>Must-Haves & Needs</Text>
+                        <Text style={styles.bucketSub} numberOfLines={1}>Groceries, Petrol, Makan, Bills, Tolls</Text>
                       </View>
                     </View>
                     <View style={styles.bucketHoursPill}>
@@ -298,14 +298,14 @@ export function SmartBudgetModal({
                 {/* 2. Guilt-Free Comfort & "Nonsense" Money */}
                 <View style={[styles.bucketCard, styles.comfortCard, { borderLeftColor: "#EC4899" }]}>
                   <View style={styles.bucketHeader}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <View style={styles.bucketTitleWrap}>
                       <Text style={{ fontSize: 22 }}>🎁</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.bucketTitle, { color: "#9D174D" }]}>
-                          Guilt-Free Comfort & "Nonsense" Fund ✨
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={[styles.bucketTitle, { color: "#9D174D" }]} numberOfLines={1}>
+                          Guilt-Free Comfort & "Nonsense" ✨
                         </Text>
-                        <Text style={styles.bucketSub}>
-                          Pinduoduo, Shopee, Boba, Gaming, Fun
+                        <Text style={styles.bucketSub} numberOfLines={1}>
+                          Special Treats
                         </Text>
                       </View>
                     </View>
@@ -337,11 +337,11 @@ export function SmartBudgetModal({
                 {/* 3. Rainy Day & Savings Stash */}
                 <View style={[styles.bucketCard, { borderLeftColor: "#10B981" }]}>
                   <View style={styles.bucketHeader}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <View style={styles.bucketTitleWrap}>
                       <Text style={{ fontSize: 22 }}>📈</Text>
-                      <View>
-                        <Text style={styles.bucketTitle}>Protected Savings / Stash</Text>
-                        <Text style={styles.bucketSub}>Emergency stash, FD, Investments</Text>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.bucketTitle} numberOfLines={1}>Protected Savings / Stash</Text>
+                        <Text style={styles.bucketSub} numberOfLines={1}>Emergency stash, FD, Investments</Text>
                       </View>
                     </View>
                     <View style={[styles.bucketHoursPill, { backgroundColor: "#DCFCE7" }]}>
@@ -370,14 +370,16 @@ export function SmartBudgetModal({
 
             {/* Total Spending Ceiling Summary Box */}
             <View style={styles.totalSummaryCard}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                <View>
+              <View style={styles.totalSummaryRow}>
+                <View style={{ flex: 1, minWidth: 0, paddingRight: 10 }}>
                   <Text style={styles.totalSummaryLabel}>Total Monthly Spending Ceiling</Text>
                   <Text style={styles.totalSummaryHours}>
-                    Equals {totalHours.toFixed(1)} hours ({(totalHours / 8).toFixed(1)} workdays) of life energy
+                    Equals {totalHours.toFixed(1)}h ({(totalHours / 8).toFixed(1)} workdays) of life energy
                   </Text>
                 </View>
-                <Text style={styles.totalSummaryVal}>{rm(totalOverallBudget)}</Text>
+                <View style={{ flexShrink: 0, alignItems: "flex-end" }}>
+                  <Text style={styles.totalSummaryVal}>{rm(totalOverallBudget)}</Text>
+                </View>
               </View>
             </View>
           </ScrollView>
@@ -603,6 +605,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: 8,
+  },
+  bucketTitleWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flex: 1,
+    minWidth: 0,
   },
   bucketTitle: {
     fontSize: 13,
@@ -618,6 +628,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: radius.pill,
+    flexShrink: 0,
   },
   bucketHoursText: {
     fontSize: 11,
@@ -658,6 +669,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderStrong,
   },
+  totalSummaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   totalSummaryLabel: {
     fontSize: 12,
     fontWeight: "700",
@@ -669,7 +685,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   totalSummaryVal: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "900",
     color: colors.onSurface,
   },

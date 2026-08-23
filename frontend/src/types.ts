@@ -59,7 +59,7 @@ export type BudgetSettings = {
   monthlyOverallLimit: number; // e.g. RM 2000
   selectedAccountIds?: string[]; // Accounts used to fund this budget pool
   needsLimit?: number; // Must-Haves (Groceries, Petrol, Makan, Bills, Tolls, Telco)
-  comfortLimit?: number; // Guilt-Free Comfort / "Nonsense" Money (Pinduoduo, Shopee, Boba, Entertainment)
+  comfortLimit?: number; // Guilt-Free Comfort / "Nonsense" Money
   savingsTarget?: number; // Protected savings / rainy-day stash
   allocationPreset?: AllocationPreset;
   categoryBudgets: CategoryBudget[];

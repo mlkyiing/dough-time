@@ -30,7 +30,7 @@ export const DEFAULT_WAGE: WageSettings = {
 export const DEFAULT_BUDGET: BudgetSettings = {
   monthlyOverallLimit: 2000,
   needsLimit: 1300, // Must-Haves (Groceries, Petrol, Makan, Bills, Tolls, Telco)
-  comfortLimit: 500, // Guilt-Free Comfort / "Nonsense" Money (Pinduoduo, Shopee, Boba, Entertainment)
+  comfortLimit: 500, // Guilt-Free Comfort / "Nonsense" Money
   savingsTarget: 200, // Savings & Buffer
   allocationPreset: "balanced_50_30_20",
   enabled: true,

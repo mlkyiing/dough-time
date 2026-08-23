@@ -479,7 +479,6 @@ export default function HomeDashboard() {
               <View style={styles.subBudgetHead}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                   <Text style={[styles.subBudgetTitle, { color: "#BE185D" }]}>🎁 Comfort Fund</Text>
-                  <Text style={styles.comfortBadge}>Guilt-free</Text>
                 </View>
                 <Text style={[styles.subBudgetVal, { color: "#BE185D" }]}>
                   {rm(bucketSpending.comfortSpent)} / {rm(comfortLimit)}
@@ -499,7 +498,7 @@ export default function HomeDashboard() {
               <Text style={[styles.subBudgetMeta, { color: isComfortOver ? "#EF4444" : "#9D174D" }]}>
                 {isComfortOver
                   ? `Over comfort cap by ${rm(bucketSpending.comfortSpent - comfortLimit)}`
-                  : `✨ ${rm(comfortRemaining)} left for Pinduoduo & treats (${comfortRemainingHours.toFixed(1)}h work)!`}
+                  : `✨ ${rm(comfortRemaining)} left for treats (${comfortRemainingHours.toFixed(1)}h work)!`}
               </Text>
             </View>
           </View>
