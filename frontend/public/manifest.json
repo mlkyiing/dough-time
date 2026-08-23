@@ -1,0 +1,28 @@
+{
+  "short_name": "DoughTime",
+  "name": "DoughTime - Mindful Money & Life Energy",
+  "icons": [
+    {
+      "src": "/apple-touch-icon.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon-180.png",
+      "type": "image/png",
+      "sizes": "180x180"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#FFF5F8",
+  "theme_color": "#EC4899",
+  "display": "standalone",
+  "orientation": "portrait"
+}

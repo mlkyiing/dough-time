@@ -18,8 +18,9 @@
       }
     },
     "web": {
+      "output": "static",
       "bundler": "metro",
-      "favicon": "./assets/mascot.jpg",
+      "favicon": "./public/favicon.png",
       "themeColor": "#EC4899",
       "backgroundColor": "#FFF5F8",
       "display": "standalone",
