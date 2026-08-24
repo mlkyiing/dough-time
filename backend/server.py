@@ -715,11 +715,27 @@ async def sync_merge(req: VaultMergeRequest):
         for did in (req.deleted_account_ids or []):
             cloud_accs.pop(did, None)
             
+        # Identify transactions that were added on the cloud (e.g. by iOS shortcut) that the client doesn't have yet
+        req_txn_ids = {t.get("id") for t in req.transactions if t.get("id")}
+        new_cloud_txns = [t for tid, t in cloud_txns.items() if tid not in req_txn_ids]
+        
         del_acc_set = set(req.deleted_account_ids or [])
         for a in req.accounts:
             aid = a.get("id")
             if aid and aid not in del_acc_set:
-                cloud_accs[aid] = a
+                acc_obj = dict(a)
+                # Deduct / apply any new transactions added by shortcut on cloud
+                for n_txn in new_cloud_txns:
+                    if n_txn.get("accountId") == aid:
+                        amt = float(n_txn.get("amount") or 0)
+                        is_income = (n_txn.get("type") == "income")
+                        acc_type = acc_obj.get("type", "bank")
+                        is_liability = acc_type in ["credit_card", "loan"]
+                        if is_income:
+                            acc_obj["balance"] = round(acc_obj.get("balance", 0) + (-amt if is_liability else amt), 2)
+                        else:
+                            acc_obj["balance"] = round(acc_obj.get("balance", 0) + (amt if is_liability else -amt), 2)
+                cloud_accs[aid] = acc_obj
         merged_accs = list(cloud_accs.values())
         
         merged_wage = req.wage_settings or cloud_data.get("wage_settings")
@@ -781,12 +797,19 @@ async def shortcut_quick_add(
         wage_settings = data.get("wage_settings") or {"hourlyRate": 25.96}
         budget_settings = data.get("budget_settings") or {}
         
-        # Pick matching or default liquid account
+        # Pick matching or default liquid account: Prioritize Touch 'n Go eWallet
         target_account = None
         if account_name:
             target_account = next((a for a in accounts if a.get("name", "").lower() == account_name.lower()), None)
         if not target_account:
-            target_account = next((a for a in accounts if a.get("type") in ["bank", "ewallet", "cash"]), accounts[0] if accounts else None)
+            # 1. Search for Touch 'n Go / TNG / TnG
+            target_account = next((a for a in accounts if any(k in a.get("name", "").lower() for k in ["touch", "tng"])), None)
+        if not target_account:
+            # 2. Search for any eWallet
+            target_account = next((a for a in accounts if a.get("type") == "ewallet"), None)
+        if not target_account:
+            # 3. Search for primary bank / cash
+            target_account = next((a for a in accounts if a.get("type") in ["bank", "cash"]), accounts[0] if accounts else None)
             
         target_acc_id = target_account.get("id") if target_account else None
         
