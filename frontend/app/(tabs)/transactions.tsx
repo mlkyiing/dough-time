@@ -17,8 +17,8 @@ import * as Haptics from "expo-haptics";
 import { colors, radius, shadow, spacing } from "@/src/theme";
 import { deleteTransaction, getAccounts, getTransactions, getWageSettings, mergeWithCloud, updateTransaction } from "@/src/store";
 import { Account, Transaction, WageSettings } from "@/src/types";
-import { CATEGORIES } from "@/src/constants";
-import { amountToWorkHours, rm } from "@/src/format";
+import { CATEGORIES, INCOME_CATEGORIES } from "@/src/constants";
+import { amountToWorkHours, formatMonthDisplay, monthKey, rm, todayISO } from "@/src/format";
 import { SwipeableTxnRow } from "@/src/components/SwipeableTxnRow";
 import { TransactionDetailModal } from "@/src/components/TransactionDetailModal";
 import { AnimatedMascot } from "@/src/components/AnimatedMascot";
@@ -37,7 +37,9 @@ export default function Transactions() {
     currency: "RM",
   });
   const [viewMode, setViewMode] = useState<"money" | "time">("money");
-  const [filter, setFilter] = useState<string>("All");
+  const [selectedMonth, setSelectedMonth] = useState<string>(monthKey(todayISO()));
+  const [typeFilter, setTypeFilter] = useState<"all" | "expense" | "income">("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("All");
   const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null);
 
   const load = useCallback(async () => {
@@ -58,19 +60,73 @@ export default function Transactions() {
     }, [load])
   );
 
-  const filtered = useMemo(
-    () => (filter === "All" ? txns : txns.filter((t) => t.category === filter)),
-    [txns, filter]
-  );
+  // Available unique months sorted descending
+  const availableMonths = useMemo(() => {
+    const set = new Set<string>();
+    set.add(monthKey(todayISO()));
+    txns.forEach((t) => {
+      if (t.date) set.add(monthKey(t.date));
+    });
+    return Array.from(set).sort().reverse();
+  }, [txns]);
 
-  const totalExpense = useMemo(
-    () => filtered.filter((t) => t.amount > 0).reduce((sum, t) => sum + t.amount, 0),
-    [filtered]
-  );
+  const currentMonthIdx = availableMonths.indexOf(selectedMonth);
 
-  const totalHours = amountToWorkHours(totalExpense, wage.hourlyRate);
+  const handlePrevMonth = () => {
+    Haptics.selectionAsync().catch(() => {});
+    if (selectedMonth === "all") {
+      setSelectedMonth(availableMonths[0] || monthKey(todayISO()));
+    } else if (currentMonthIdx < availableMonths.length - 1) {
+      setSelectedMonth(availableMonths[currentMonthIdx + 1]);
+    }
+  };
 
-  const chips = ["All", ...CATEGORIES.map((c) => c.key)];
+  const handleNextMonth = () => {
+    Haptics.selectionAsync().catch(() => {});
+    if (selectedMonth === "all") return;
+    if (currentMonthIdx > 0) {
+      setSelectedMonth(availableMonths[currentMonthIdx - 1]);
+    }
+  };
+
+  // Filtered dataset
+  const filtered = useMemo(() => {
+    return txns.filter((t) => {
+      // 1. Month filter
+      if (selectedMonth !== "all" && monthKey(t.date) !== selectedMonth) {
+        return false;
+      }
+      // 2. Type filter
+      if (typeFilter === "expense" && t.type === "income") return false;
+      if (typeFilter === "income" && t.type !== "income") return false;
+      // 3. Category filter
+      if (categoryFilter !== "All" && t.category !== categoryFilter) return false;
+      return true;
+    });
+  }, [txns, selectedMonth, typeFilter, categoryFilter]);
+
+  // Month stats for banner
+  const monthStats = useMemo(() => {
+    const monthTxns = selectedMonth === "all" ? txns : txns.filter((t) => monthKey(t.date) === selectedMonth);
+    const expenses = monthTxns.filter((t) => t.type !== "income").reduce((s, t) => s + t.amount, 0);
+    const income = monthTxns.filter((t) => t.type === "income").reduce((s, t) => s + t.amount, 0);
+    const net = income - expenses;
+    return { expenses, income, net };
+  }, [txns, selectedMonth]);
+
+  const totalExpenseHours = amountToWorkHours(monthStats.expenses, wage.hourlyRate);
+  const totalIncomeHours = amountToWorkHours(monthStats.income, wage.hourlyRate);
+
+  // Category chips based on type filter
+  const categoryChips = useMemo(() => {
+    if (typeFilter === "income") {
+      return ["All", ...INCOME_CATEGORIES.map((c) => c.key)];
+    }
+    if (typeFilter === "expense") {
+      return ["All", ...CATEGORIES.map((c) => c.key)];
+    }
+    return ["All", ...CATEGORIES.map((c) => c.key), ...INCOME_CATEGORIES.map((c) => c.key)];
+  }, [typeFilter]);
 
   const handleDelete = (id: string) => {
     const doDelete = async () => {
@@ -122,8 +178,8 @@ export default function Transactions() {
             <Text style={styles.title}>Activity</Text>
             <Text style={styles.subtitle}>
               {viewMode === "money"
-                ? `Total ${rm(totalExpense)}`
-                : `Total ${totalHours.toFixed(1)} hrs (${(totalHours / 8).toFixed(1)} workdays)`}
+                ? `Spent ${rm(monthStats.expenses)} · +${rm(monthStats.income)} in`
+                : `${totalExpenseHours.toFixed(1)}h spent · +${totalIncomeHours.toFixed(1)}h freed`}
             </Text>
           </View>
         </View>
@@ -168,6 +224,85 @@ export default function Transactions() {
         </View>
       </View>
 
+      {/* Month Navigator Bar */}
+      <View style={styles.monthNavRow}>
+        <Pressable
+          style={({ pressed }) => [styles.monthNavArrow, pressed && { opacity: 0.7 }]}
+          onPress={handlePrevMonth}
+          disabled={selectedMonth !== "all" && currentMonthIdx >= availableMonths.length - 1}
+        >
+          <Ionicons
+            name="chevron-back"
+            size={18}
+            color={selectedMonth !== "all" && currentMonthIdx >= availableMonths.length - 1 ? colors.borderStrong : colors.onSurface}
+          />
+        </Pressable>
+
+        <Pressable
+          style={styles.monthDisplayPill}
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            setSelectedMonth(selectedMonth === "all" ? monthKey(todayISO()) : "all");
+          }}
+        >
+          <Ionicons name="calendar-outline" size={14} color={colors.brandPrimary} />
+          <Text style={styles.monthDisplayText}>{formatMonthDisplay(selectedMonth)}</Text>
+          <Ionicons name="swap-horizontal" size={12} color={colors.onSurfaceSecondary} />
+        </Pressable>
+
+        <Pressable
+          style={({ pressed }) => [styles.monthNavArrow, pressed && { opacity: 0.7 }]}
+          onPress={handleNextMonth}
+          disabled={selectedMonth === "all" || currentMonthIdx <= 0}
+        >
+          <Ionicons
+            name="chevron-forward"
+            size={18}
+            color={selectedMonth === "all" || currentMonthIdx <= 0 ? colors.borderStrong : colors.onSurface}
+          />
+        </Pressable>
+      </View>
+
+      {/* Type Filter Segmented Control (All vs Expenses vs Income) */}
+      <View style={styles.typeSegmentWrap}>
+        <Pressable
+          style={[styles.typeSegmentBtn, typeFilter === "all" && styles.typeSegmentBtnActive]}
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            setTypeFilter("all");
+            setCategoryFilter("All");
+          }}
+        >
+          <Text style={[styles.typeSegmentText, typeFilter === "all" && styles.typeSegmentTextActive]}>
+            All ({filtered.length})
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.typeSegmentBtn, typeFilter === "expense" && styles.typeSegmentBtnActiveExpense]}
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            setTypeFilter("expense");
+            setCategoryFilter("All");
+          }}
+        >
+          <Text style={[styles.typeSegmentText, typeFilter === "expense" && styles.typeSegmentTextActive]}>
+            💸 Expenses
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.typeSegmentBtn, typeFilter === "income" && styles.typeSegmentBtnActiveIncome]}
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            setTypeFilter("income");
+            setCategoryFilter("All");
+          }}
+        >
+          <Text style={[styles.typeSegmentText, typeFilter === "income" && styles.typeSegmentTextActive]}>
+            💰 Income
+          </Text>
+        </Pressable>
+      </View>
+
       {/* Category Filter Chips */}
       <View style={styles.chipsWrap}>
         <ScrollView
@@ -175,15 +310,15 @@ export default function Transactions() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ gap: 8, paddingHorizontal: spacing.lg }}
         >
-          {chips.map((c) => {
-            const isActive = filter === c;
+          {categoryChips.map((c) => {
+            const isActive = categoryFilter === c;
             return (
               <Pressable
                 key={c}
                 testID={`filter-chip-${c}`}
                 onPress={() => {
                   Haptics.selectionAsync().catch(() => {});
-                  setFilter(c);
+                  setCategoryFilter(c);
                 }}
                 style={[
                   styles.chip,
@@ -221,7 +356,11 @@ export default function Transactions() {
               contentFit="contain"
             />
             <Text style={styles.emptyTitle}>No transactions found</Text>
-            <Text style={styles.emptySubtitle}>Tap + to log an expense or scan a receipt!</Text>
+            <Text style={styles.emptySubtitle}>
+              {selectedMonth !== "all"
+                ? `No activity recorded for ${formatMonthDisplay(selectedMonth)}.`
+                : "Tap + to log an expense or deposit income!"}
+            </Text>
           </View>
         }
         renderItem={({ item }) => {
@@ -307,6 +446,77 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     ...shadow.glow,
+  },
+  monthNavRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  monthNavArrow: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  monthDisplayPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  monthDisplayText: {
+    fontWeight: "800",
+    fontSize: 13,
+    color: colors.onSurface,
+  },
+  typeSegmentWrap: {
+    flexDirection: "row",
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.pill,
+    padding: 3,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  typeSegmentBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  typeSegmentBtnActive: {
+    backgroundColor: colors.surface,
+    ...shadow.soft,
+  },
+  typeSegmentBtnActiveExpense: {
+    backgroundColor: colors.brandPrimary,
+    ...shadow.soft,
+  },
+  typeSegmentBtnActiveIncome: {
+    backgroundColor: "#10B981",
+    ...shadow.soft,
+  },
+  typeSegmentText: {
+    fontWeight: "700",
+    fontSize: 12,
+    color: colors.onSurfaceSecondary,
+  },
+  typeSegmentTextActive: {
+    color: "#FFFFFF",
+    fontWeight: "800",
   },
   chipsWrap: { paddingBottom: spacing.sm },
   chip: {

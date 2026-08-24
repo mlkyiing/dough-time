@@ -447,6 +447,27 @@ export async function setTransactions(list: Transaction[], triggerSync = true) {
   if (triggerSync) await touchModified();
 }
 
+function adjustAccountForTransaction(
+  acc: Account,
+  amount: number,
+  isIncome: boolean,
+  reverse = false
+) {
+  const isLiability = isLiabilityAccount(acc.type);
+  let delta = 0;
+
+  if (isIncome) {
+    // Income adds to asset, reduces liability debt
+    delta = isLiability ? -amount : amount;
+  } else {
+    // Expense reduces asset, increases liability debt
+    delta = isLiability ? amount : -amount;
+  }
+
+  if (reverse) delta = -delta;
+  acc.balance = +(acc.balance + delta).toFixed(2);
+}
+
 export async function addTransaction(t: Omit<Transaction, "id" | "createdAt">) {
   const list = await getTransactions();
   const tx: Transaction = {
@@ -461,12 +482,7 @@ export async function addTransaction(t: Omit<Transaction, "id" | "createdAt">) {
   const accs = await getAccounts();
   const idx = accs.findIndex((a) => a.id === t.accountId);
   if (idx >= 0) {
-    const acc = accs[idx];
-    if (isLiabilityAccount(acc.type)) {
-      acc.balance = +(acc.balance + t.amount).toFixed(2);
-    } else {
-      acc.balance = +(acc.balance - t.amount).toFixed(2);
-    }
+    adjustAccountForTransaction(accs[idx], t.amount, t.type === "income", false);
     await setAccounts(accs, false);
   }
 
@@ -488,12 +504,7 @@ export async function addManyTransactions(txns: Omit<Transaction, "id" | "create
 
     const idx = accs.findIndex((a) => a.id === t.accountId);
     if (idx >= 0) {
-      const acc = accs[idx];
-      if (isLiabilityAccount(acc.type)) {
-        acc.balance = +(acc.balance + t.amount).toFixed(2);
-      } else {
-        acc.balance = +(acc.balance - t.amount).toFixed(2);
-      }
+      adjustAccountForTransaction(accs[idx], t.amount, t.type === "income", false);
     }
   }
 
@@ -507,22 +518,31 @@ export async function updateTransaction(updated: Transaction) {
   const idx = list.findIndex((t) => t.id === updated.id);
   if (idx >= 0) {
     const old = list[idx];
-    const diff = updated.amount - old.amount;
     list[idx] = updated;
     await setTransactions(list, false);
 
-    if (diff !== 0) {
-      const accs = await getAccounts();
-      const accIdx = accs.findIndex((a) => a.id === updated.accountId);
-      if (accIdx >= 0) {
-        const acc = accs[accIdx];
-        if (isLiabilityAccount(acc.type)) {
-          acc.balance = +(acc.balance + diff).toFixed(2);
-        } else {
-          acc.balance = +(acc.balance - diff).toFixed(2);
-        }
+    const accs = await getAccounts();
+    const oldAccIdx = accs.findIndex((a) => a.id === old.accountId);
+    const newAccIdx = accs.findIndex((a) => a.id === updated.accountId);
+
+    if (old.accountId === updated.accountId) {
+      // Same account, adjust net difference
+      if (newAccIdx >= 0) {
+        // Revert old
+        adjustAccountForTransaction(accs[newAccIdx], old.amount, old.type === "income", true);
+        // Apply new
+        adjustAccountForTransaction(accs[newAccIdx], updated.amount, updated.type === "income", false);
         await setAccounts(accs, false);
       }
+    } else {
+      // Account changed! Revert from old account, apply to new account
+      if (oldAccIdx >= 0) {
+        adjustAccountForTransaction(accs[oldAccIdx], old.amount, old.type === "income", true);
+      }
+      if (newAccIdx >= 0) {
+        adjustAccountForTransaction(accs[newAccIdx], updated.amount, updated.type === "income", false);
+      }
+      await setAccounts(accs, false);
     }
     await touchModified();
   }
@@ -538,12 +558,8 @@ export async function deleteTransaction(idToRemove: string) {
   const accs = await getAccounts();
   const idx = accs.findIndex((a) => a.id === target.accountId);
   if (idx >= 0) {
-    const acc = accs[idx];
-    if (isLiabilityAccount(acc.type)) {
-      acc.balance = +(acc.balance - target.amount).toFixed(2);
-    } else {
-      acc.balance = +(acc.balance + target.amount).toFixed(2);
-    }
+    // Revert target transaction effect
+    adjustAccountForTransaction(accs[idx], target.amount, target.type === "income", true);
     await setAccounts(accs, false);
   }
   await touchModified();

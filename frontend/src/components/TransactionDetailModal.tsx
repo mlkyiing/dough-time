@@ -13,9 +13,9 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { colors, radius, shadow, spacing } from "@/src/theme";
-import { CATEGORIES, categoryMeta } from "@/src/constants";
+import { CATEGORIES, INCOME_CATEGORIES, categoryMeta } from "@/src/constants";
 import { amountToWorkHours, formatTimeCost, getBobaReaction, rm, shortDate, todayISO } from "@/src/format";
-import { Account, Transaction } from "@/src/types";
+import { Account, BudgetBucket, Transaction } from "@/src/types";
 import { AnimatedMascot } from "./AnimatedMascot";
 
 interface Props {
@@ -28,6 +28,12 @@ interface Props {
   onDelete: (id: string) => void;
   onUpdate?: (updated: Transaction) => void;
 }
+
+const BUCKET_OPTIONS: { key: BudgetBucket; label: string; emoji: string }[] = [
+  { key: "needs", label: "Must-Haves", emoji: "🍞" },
+  { key: "comfort", label: "Comfort Fund", emoji: "🎁" },
+  { key: "savings", label: "Savings / Stash", emoji: "📈" },
+];
 
 export function TransactionDetailModal({
   visible,
@@ -42,9 +48,11 @@ export function TransactionDetailModal({
   if (!t) return null;
 
   const [isEditing, setIsEditing] = useState(false);
+  const [editType, setEditType] = useState<"expense" | "income">("expense");
   const [editMerchant, setEditMerchant] = useState("");
   const [editAmount, setEditAmount] = useState("");
   const [editCategory, setEditCategory] = useState("Makan");
+  const [editBucket, setEditBucket] = useState<BudgetBucket | undefined>(undefined);
   const [editDate, setEditDate] = useState("");
   const [editNote, setEditNote] = useState("");
   const [editAccountId, setEditAccountId] = useState("");
@@ -52,19 +60,23 @@ export function TransactionDetailModal({
   useEffect(() => {
     if (t) {
       setIsEditing(false);
+      setEditType(t.type || "expense");
       setEditMerchant(t.merchant || "");
       setEditAmount(String(t.amount || ""));
       setEditCategory(t.category || "Makan");
+      setEditBucket(t.bucket);
       setEditDate(t.date || todayISO());
       setEditNote(t.note || "");
-      setEditAccountId(t.accountId || "");
+      setEditAccountId(t.accountId || (accounts[0]?.id ?? ""));
     }
-  }, [t]);
+  }, [t, accounts]);
 
+  const isIncome = (t.type === "income");
   const meta = categoryMeta(t.category);
   const timeCost = formatTimeCost(t.amount, hourlyRate);
   const workHours = amountToWorkHours(t.amount, hourlyRate);
   const reaction = getBobaReaction(workHours);
+  const currentAccount = accounts.find((a) => a.id === (isEditing ? editAccountId : t.accountId)) || acc;
 
   const handleDelete = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
@@ -78,9 +90,11 @@ export function TransactionDetailModal({
 
     const updated: Transaction = {
       ...t,
-      merchant: editMerchant.trim() || t.category,
+      type: editType,
+      merchant: editMerchant.trim() || editCategory,
       amount: num,
-      category: editCategory as any,
+      category: editCategory,
+      bucket: editBucket,
       date: editDate || todayISO(),
       note: editNote.trim() || undefined,
       accountId: editAccountId || t.accountId,
@@ -110,14 +124,16 @@ export function TransactionDetailModal({
 
           {/* Header */}
           <View style={styles.headerRow}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
               <View style={[styles.iconBox, { backgroundColor: meta.tint }]}>
                 <Text style={{ fontSize: 24 }}>{meta.emoji}</Text>
               </View>
-              <View>
-                <Text style={styles.categoryName}>{isEditing ? "Edit Expense" : t.category}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.categoryName}>
+                  {isEditing ? "Edit Record" : isIncome ? "💰 Income" : "💸 Expense"} · {t.category}
+                </Text>
                 <Text style={styles.merchantTitle} numberOfLines={1}>
-                  {isEditing ? "Modify Transaction Details" : (t.merchant || t.category)}
+                  {isEditing ? (editMerchant || editCategory) : (t.merchant || t.category)}
                 </Text>
               </View>
             </View>
@@ -130,12 +146,12 @@ export function TransactionDetailModal({
                     Haptics.selectionAsync().catch(() => {});
                     setIsEditing(!isEditing);
                   }}
-                  style={styles.editToggleBtn}
+                  style={[styles.editToggleBtn, isEditing && { backgroundColor: colors.brandPrimary }]}
                 >
                   <Ionicons
-                    name={isEditing ? "eye-outline" : "create-outline"}
-                    size={20}
-                    color={colors.brandPrimary}
+                    name={isEditing ? "checkmark" : "create-outline"}
+                    size={18}
+                    color={isEditing ? colors.onBrandPrimary : colors.brandPrimary}
                   />
                 </Pressable>
               )}
@@ -153,17 +169,105 @@ export function TransactionDetailModal({
               style={{ marginVertical: spacing.md }}
               contentContainerStyle={{ paddingBottom: 24 }}
             >
+              {/* Type Switcher (Expense vs Income) */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Merchant / Description</Text>
+                <Text style={styles.inputLabel}>Record Type</Text>
+                <View style={styles.typeToggleRow}>
+                  <Pressable
+                    style={[
+                      styles.typeToggleBtn,
+                      editType === "expense" && styles.typeToggleBtnActiveExpense,
+                    ]}
+                    onPress={() => {
+                      Haptics.selectionAsync().catch(() => {});
+                      setEditType("expense");
+                      if (INCOME_CATEGORIES.some((c) => c.key === editCategory)) {
+                        setEditCategory("Makan");
+                      }
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.typeToggleText,
+                        editType === "expense" && styles.typeToggleTextActive,
+                      ]}
+                    >
+                      💸 Expense
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={[
+                      styles.typeToggleBtn,
+                      editType === "income" && styles.typeToggleBtnActiveIncome,
+                    ]}
+                    onPress={() => {
+                      Haptics.selectionAsync().catch(() => {});
+                      setEditType("income");
+                      if (CATEGORIES.some((c) => c.key === editCategory)) {
+                        setEditCategory("Salary");
+                      }
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.typeToggleText,
+                        editType === "income" && styles.typeToggleTextActive,
+                      ]}
+                    >
+                      💰 Income
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              {/* Account Selection Chips */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>
+                  {editType === "income" ? "Deposit / Receiving Account" : "Payment Account / Card"}
+                </Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+                  {accounts.map((a) => {
+                    const isSel = editAccountId === a.id;
+                    return (
+                      <Pressable
+                        key={a.id}
+                        onPress={() => {
+                          Haptics.selectionAsync().catch(() => {});
+                          setEditAccountId(a.id);
+                        }}
+                        style={[
+                          styles.accountChip,
+                          isSel && styles.accountChipActive,
+                        ]}
+                      >
+                        <Text style={{ fontSize: 15 }}>{a.emoji}</Text>
+                        <View>
+                          <Text style={[styles.accountChipName, isSel && styles.accountChipNameActive]}>
+                            {a.name}
+                          </Text>
+                          <Text style={[styles.accountChipBal, isSel && styles.accountChipBalActive]}>
+                            {rm(a.balance)}
+                          </Text>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+
+              {/* Merchant / Description */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Merchant / Title / Description</Text>
                 <TextInput
                   value={editMerchant}
                   onChangeText={setEditMerchant}
-                  placeholder="e.g. McDonald's, Grab, Shell"
+                  placeholder={editType === "income" ? "e.g. Monthly Salary, Freelance Gig" : "e.g. McDonald's, Grab, Shell"}
                   placeholderTextColor={colors.onSurfaceSecondary}
                   style={styles.input}
                 />
               </View>
 
+              {/* Amount */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Amount (RM)</Text>
                 <TextInput
@@ -177,10 +281,11 @@ export function TransactionDetailModal({
                 />
               </View>
 
+              {/* Category */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Category</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 4 }}>
-                  {CATEGORIES.map((c) => {
+                  {(editType === "income" ? INCOME_CATEGORIES : CATEGORIES).map((c) => {
                     const isSel = editCategory === c.key;
                     return (
                       <Pressable
@@ -204,6 +309,37 @@ export function TransactionDetailModal({
                 </ScrollView>
               </View>
 
+              {/* Spending Pool / Bucket (Only for Expenses) */}
+              {editType === "expense" && (
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Budget Pool / Bucket (Optional)</Text>
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    {BUCKET_OPTIONS.map((b) => {
+                      const isSel = editBucket === b.key;
+                      return (
+                        <Pressable
+                          key={b.key}
+                          onPress={() => {
+                            Haptics.selectionAsync().catch(() => {});
+                            setEditBucket(isSel ? undefined : b.key);
+                          }}
+                          style={[
+                            styles.bucketChip,
+                            isSel && styles.bucketChipActive,
+                          ]}
+                        >
+                          <Text style={{ fontSize: 14 }}>{b.emoji}</Text>
+                          <Text style={[styles.bucketChipText, isSel && styles.bucketChipTextActive]}>
+                            {b.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+
+              {/* Date */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Date (YYYY-MM-DD)</Text>
                 <TextInput
@@ -215,6 +351,7 @@ export function TransactionDetailModal({
                 />
               </View>
 
+              {/* Note */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Note / Memo (Optional)</Text>
                 <TextInput
@@ -227,36 +364,50 @@ export function TransactionDetailModal({
               </View>
 
               <Pressable style={styles.saveEditBtn} onPress={handleSaveEdit}>
-                <Text style={styles.saveEditBtnText}>Save Transaction Changes</Text>
+                <Text style={styles.saveEditBtnText}>Save Changes</Text>
               </Pressable>
             </ScrollView>
           ) : (
             /* View Details Mode */
             <ScrollView showsVerticalScrollIndicator={false} style={{ marginVertical: spacing.md }}>
               {/* Amount Hero Box */}
-              <View style={styles.amountHeroBox}>
-                <Text style={styles.amountLabel}>Total Spent</Text>
-                <Text style={styles.amountValue}>{rm(t.amount)}</Text>
+              <View style={[styles.amountHeroBox, isIncome && styles.amountHeroBoxIncome]}>
+                <Text style={styles.amountLabel}>
+                  {isIncome ? "Total Income Received" : "Total Amount Spent"}
+                </Text>
+                <Text style={[styles.amountValue, isIncome && { color: "#059669" }]}>
+                  {isIncome ? `+${rm(t.amount)}` : rm(t.amount)}
+                </Text>
 
-                {/* Life Time Cost Tag */}
-                <View style={styles.timeTag}>
-                  <Text style={{ fontSize: 16 }}>⏱️</Text>
+                {/* Life Time Cost / Freedom Tag */}
+                <View style={[styles.timeTag, isIncome && { backgroundColor: "#DCFCE7" }]}>
+                  <Text style={{ fontSize: 16 }}>{isIncome ? "🌿" : "⏱️"}</Text>
                   <Text style={styles.timeTagText}>
-                    Traded <Text style={{ fontWeight: "800", color: colors.brandPrimary }}>{timeCost}</Text> of your life
+                    {isIncome ? (
+                      <>
+                        Freed <Text style={{ fontWeight: "800", color: "#059669" }}>+{timeCost}</Text> of life energy
+                      </>
+                    ) : (
+                      <>
+                        Traded <Text style={{ fontWeight: "800", color: colors.brandPrimary }}>{timeCost}</Text> of your life
+                      </>
+                    )}
                   </Text>
                 </View>
               </View>
 
-              {/* Mascot Impact Reaction */}
+              {/* Mascot Reaction */}
               <View style={styles.reactionCard}>
                 <View style={styles.reactionRow}>
-                  <AnimatedMascot variant="coin" size={48} interactive={true} />
+                  <AnimatedMascot variant={isIncome ? "rich" : "coin"} size={48} interactive={true} />
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text style={styles.reactionTitle}>
-                      {reaction.title} {reaction.emoji}
+                      {isIncome ? "Income Stashed! 💰" : `${reaction.title} ${reaction.emoji}`}
                     </Text>
                     <Text style={styles.reactionDesc}>
-                      At RM {hourlyRate.toFixed(2)}/hr, this purchase required {workHours.toFixed(1)} hours of work.
+                      {isIncome
+                        ? `At RM ${hourlyRate.toFixed(2)}/hr, this adds +${workHours.toFixed(1)} hours of financial freedom.`
+                        : `At RM ${hourlyRate.toFixed(2)}/hr, this required ${workHours.toFixed(1)} hours of hard work.`}
                     </Text>
                   </View>
                 </View>
@@ -265,12 +416,28 @@ export function TransactionDetailModal({
               {/* Details List */}
               <View style={styles.detailsList}>
                 <View style={styles.detailItem}>
-                  <Text style={styles.detailLabel}>Payment Account / Card</Text>
+                  <Text style={styles.detailLabel}>
+                    {isIncome ? "Deposited To" : "Payment Account"}
+                  </Text>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                    <Text style={{ fontSize: 16 }}>{acc?.emoji || "💳"}</Text>
-                    <Text style={styles.detailValue}>{acc?.name || "Cash"}</Text>
+                    <Text style={{ fontSize: 16 }}>{currentAccount?.emoji || "💳"}</Text>
+                    <Text style={styles.detailValue}>{currentAccount?.name || "Cash Wallet"}</Text>
                   </View>
                 </View>
+
+                {t.bucket && (
+                  <>
+                    <View style={styles.divider} />
+                    <View style={styles.detailItem}>
+                      <Text style={styles.detailLabel}>Budget Pool</Text>
+                      <View style={styles.bucketTag}>
+                        <Text style={{ fontSize: 12 }}>
+                          {t.bucket === "needs" ? "🍞 Must-Haves" : t.bucket === "comfort" ? "🎁 Comfort Fund" : "📈 Savings"}
+                        </Text>
+                      </View>
+                    </View>
+                  </>
+                )}
 
                 <View style={styles.divider} />
 
@@ -291,17 +458,32 @@ export function TransactionDetailModal({
                   </>
                 )}
               </View>
+
+              {/* Action Buttons */}
+              <View style={{ marginTop: spacing.lg, gap: 8 }}>
+                {onUpdate && (
+                  <Pressable
+                    style={styles.editActionBtn}
+                    onPress={() => {
+                      Haptics.selectionAsync().catch(() => {});
+                      setIsEditing(true);
+                    }}
+                  >
+                    <Ionicons name="create-outline" size={18} color={colors.onBrandPrimary} />
+                    <Text style={styles.editActionBtnText}>Edit Details & Account</Text>
+                  </Pressable>
+                )}
+
+                <Pressable
+                  style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.85 }]}
+                  onPress={handleDelete}
+                >
+                  <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                  <Text style={styles.deleteBtnText}>Delete Transaction</Text>
+                </Pressable>
+              </View>
             </ScrollView>
           )}
-
-          {/* Delete Action Button */}
-          <Pressable
-            style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.85 }]}
-            onPress={handleDelete}
-          >
-            <Ionicons name="trash-outline" size={18} color="#EF4444" />
-            <Text style={styles.deleteBtnText}>Delete Transaction</Text>
-          </Pressable>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -354,7 +536,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     fontSize: 18,
     color: colors.onSurface,
-    maxWidth: 180,
+    maxWidth: 200,
   },
   editToggleBtn: {
     width: 34,
@@ -372,6 +554,92 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  typeToggleRow: {
+    flexDirection: "row",
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  typeToggleBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    alignItems: "center",
+  },
+  typeToggleBtnActiveExpense: {
+    backgroundColor: colors.brandPrimary,
+  },
+  typeToggleBtnActiveIncome: {
+    backgroundColor: "#10B981",
+  },
+  typeToggleText: {
+    fontWeight: "700",
+    fontSize: 13,
+    color: colors.onSurfaceSecondary,
+  },
+  typeToggleTextActive: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+  },
+  accountChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.borderStrong,
+  },
+  accountChipActive: {
+    borderColor: colors.brandPrimary,
+    backgroundColor: "#FDF2F8",
+  },
+  accountChipName: {
+    fontWeight: "700",
+    fontSize: 12,
+    color: colors.onSurface,
+  },
+  accountChipNameActive: {
+    color: colors.brandPrimary,
+    fontWeight: "800",
+  },
+  accountChipBal: {
+    fontWeight: "600",
+    fontSize: 11,
+    color: colors.onSurfaceSecondary,
+  },
+  accountChipBalActive: {
+    color: colors.brandPrimary,
+  },
+  bucketChip: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  bucketChipActive: {
+    backgroundColor: colors.surfaceTertiary,
+    borderColor: colors.brandPrimary,
+  },
+  bucketChipText: {
+    fontWeight: "700",
+    fontSize: 11,
+    color: colors.onSurfaceSecondary,
+  },
+  bucketChipTextActive: {
+    color: colors.brandPrimary,
+    fontWeight: "800",
+  },
   amountHeroBox: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
@@ -381,6 +649,10 @@ const styles = StyleSheet.create({
     borderColor: colors.borderStrong,
     marginBottom: spacing.md,
     ...shadow.card,
+  },
+  amountHeroBoxIncome: {
+    borderColor: "#A7F3D0",
+    backgroundColor: "#F0FDF4",
   },
   amountLabel: {
     fontWeight: "600",
@@ -458,6 +730,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.onSurface,
   },
+  bucketTag: {
+    backgroundColor: colors.surfaceTertiary,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+  },
   divider: {
     height: 1,
     backgroundColor: colors.borderStrong,
@@ -519,6 +797,21 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     fontSize: 15,
   },
+  editActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: colors.brandPrimary,
+    paddingVertical: 14,
+    borderRadius: radius.pill,
+    ...shadow.glow,
+  },
+  editActionBtnText: {
+    color: colors.onBrandPrimary,
+    fontWeight: "800",
+    fontSize: 15,
+  },
   deleteBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -527,7 +820,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#FEE2E2",
     paddingVertical: 14,
     borderRadius: radius.pill,
-    marginTop: spacing.sm,
   },
   deleteBtnText: {
     fontWeight: "700",
@@ -535,3 +827,4 @@ const styles = StyleSheet.create({
     color: "#EF4444",
   },
 });
+

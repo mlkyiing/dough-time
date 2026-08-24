@@ -14,21 +14,30 @@ import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { colors, radius, shadow, spacing } from "@/src/theme";
 import { addTransaction, getAccounts, getWageSettings } from "@/src/store";
-import { Account, WageSettings } from "@/src/types";
-import { CATEGORIES } from "@/src/constants";
+import { Account, BudgetBucket, WageSettings } from "@/src/types";
+import { CATEGORIES, INCOME_CATEGORIES } from "@/src/constants";
 import {
   amountToWorkHours,
   formatTimeCost,
   getBobaReaction,
+  rm,
   todayISO,
 } from "@/src/format";
 
+const BUCKET_OPTIONS: { key: BudgetBucket; label: string; emoji: string }[] = [
+  { key: "needs", label: "Must-Haves", emoji: "🍞" },
+  { key: "comfort", label: "Comfort Fund", emoji: "🎁" },
+  { key: "savings", label: "Savings / Stash", emoji: "📈" },
+];
+
 export default function QuickAddModal() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ amount?: string; category?: string; merchant?: string; note?: string }>();
+  const params = useLocalSearchParams<{ amount?: string; category?: string; merchant?: string; note?: string; type?: string }>();
   
+  const [recordType, setRecordType] = useState<"expense" | "income">((params.type as any) || "expense");
   const [amountStr, setAmountStr] = useState(params.amount ? String(params.amount) : "0");
-  const [category, setCategory] = useState<string>(params.category || "Makan");
+  const [category, setCategory] = useState<string>(params.category || (params.type === "income" ? "Salary" : "Makan"));
+  const [bucket, setBucket] = useState<BudgetBucket | undefined>(undefined);
   const [accountId, setAccountId] = useState<string>("");
   const [merchant, setMerchant] = useState<string>(params.merchant || "");
   const [note, setNote] = useState<string>(params.note || "");
@@ -82,6 +91,7 @@ export default function QuickAddModal() {
   const workHours = amountToWorkHours(currentAmt, wage.hourlyRate);
   const reaction = getBobaReaction(workHours);
   const timeFormatted = formatTimeCost(currentAmt, wage.hourlyRate);
+  const isIncome = recordType === "income";
 
   const handleSave = async () => {
     const amt = parseFloat(amountStr);
@@ -89,8 +99,10 @@ export default function QuickAddModal() {
     setSaving(true);
     try {
       await addTransaction({
+        type: recordType,
         amount: amt,
         category,
+        bucket: isIncome ? undefined : bucket,
         accountId,
         merchant: merchant.trim() || undefined,
         note: note.trim() || undefined,
@@ -122,10 +134,10 @@ export default function QuickAddModal() {
       <View style={styles.header}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           <Image
-            source={require("@/assets/mascot.jpg")}
+            source={isIncome ? require("@/assets/mascot_rich.jpg") : require("@/assets/mascot.jpg")}
             style={{ width: 36, height: 36, borderRadius: 18 }}
           />
-          <Text style={styles.title}>Quick Add Expense</Text>
+          <Text style={styles.title}>{isIncome ? "Deposit Income 💰" : "Quick Add Expense 💸"}</Text>
         </View>
         <Pressable onPress={handleClose} testID="close-quick-add" hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}>
           <Ionicons name="close-circle" size={32} color={colors.onSurfaceSecondary} />
@@ -133,36 +145,83 @@ export default function QuickAddModal() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Expense vs Income Segmented Toggle */}
+        <View style={styles.typeToggleWrapper}>
+          <Pressable
+            style={[styles.typeToggleBtn, !isIncome && styles.typeToggleBtnActiveExpense]}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              setRecordType("expense");
+              if (INCOME_CATEGORIES.some((c) => c.key === category)) {
+                setCategory("Makan");
+              }
+            }}
+          >
+            <Text style={[styles.typeToggleText, !isIncome && styles.typeToggleTextActive]}>
+              💸 Expense
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.typeToggleBtn, isIncome && styles.typeToggleBtnActiveIncome]}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              setRecordType("income");
+              if (CATEGORIES.some((c) => c.key === category)) {
+                setCategory("Salary");
+              }
+            }}
+          >
+            <Text style={[styles.typeToggleText, isIncome && styles.typeToggleTextActive]}>
+              💰 Income
+            </Text>
+          </Pressable>
+        </View>
+
         {/* Amount Display */}
         <View style={styles.amountBox}>
-          <Text style={styles.currencySymbol}>RM</Text>
-          <Text style={styles.amountText}>{amountStr}</Text>
+          <Text style={styles.currencySymbol}>{isIncome ? "+RM" : "RM"}</Text>
+          <Text style={[styles.amountText, isIncome && { color: "#059669" }]}>{amountStr}</Text>
         </View>
 
         {/* Live Money -> Work Time Conversion Pill */}
-        <View style={[styles.timeConverterPill, { borderColor: reaction.color }]}>
-          <View style={styles.mascotSmallWrap}>
+        <View
+          style={[
+            styles.timeConverterPill,
+            isIncome ? { borderColor: "#A7F3D0", backgroundColor: "#F0FDF4" } : { borderColor: reaction.color },
+          ]}
+        >
+          <View style={[styles.mascotSmallWrap, isIncome && { backgroundColor: "#DCFCE7" }]}>
             <Image
-              source={require("@/assets/mascot_coin.jpg")}
-              style={{ width: 36, height: 36 }}
+              source={isIncome ? require("@/assets/mascot_rich.jpg") : require("@/assets/mascot_coin.jpg")}
+              style={{ width: 36, height: 36, borderRadius: 18 }}
               contentFit="contain"
             />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.timeConverterTitle}>
-              Costs <Text style={{ color: colors.brandPrimary, fontWeight: "800" }}>{timeFormatted}</Text> of your life
+              {isIncome ? (
+                <>
+                  Earns <Text style={{ color: "#059669", fontWeight: "800" }}>+{timeFormatted}</Text> of life freedom 🌿
+                </>
+              ) : (
+                <>
+                  Costs <Text style={{ color: colors.brandPrimary, fontWeight: "800" }}>{timeFormatted}</Text> of your life
+                </>
+              )}
             </Text>
             <Text style={styles.timeConverterDesc}>
-              {reaction.desc} (at RM {wage.hourlyRate.toFixed(2)}/hr)
+              {isIncome
+                ? `Adds +${workHours.toFixed(1)} hrs towards your freedom (at RM ${wage.hourlyRate.toFixed(2)}/hr)`
+                : `${reaction.desc} (at RM ${wage.hourlyRate.toFixed(2)}/hr)`}
             </Text>
           </View>
         </View>
 
         {/* Categories Pills */}
-        <Text style={styles.sectionLabel}>Category</Text>
+        <Text style={styles.sectionLabel}>{isIncome ? "Income Category" : "Expense Category"}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.md }}>
           <View style={styles.pillRow}>
-            {CATEGORIES.map((cat) => {
+            {(isIncome ? INCOME_CATEGORIES : CATEGORIES).map((cat) => {
               const isSel = category === cat.key;
               return (
                 <Pressable
@@ -172,7 +231,10 @@ export default function QuickAddModal() {
                     Haptics.selectionAsync().catch(() => {});
                     setCategory(cat.key);
                   }}
-                  style={[styles.pill, isSel && styles.pillSelected]}
+                  style={[
+                    styles.pill,
+                    isSel && (isIncome ? styles.pillSelectedIncome : styles.pillSelected),
+                  ]}
                 >
                   <Text style={{ fontSize: 16 }}>{cat.emoji}</Text>
                   <Text style={[styles.pillText, isSel && styles.pillTextSelected]}>{cat.key}</Text>
@@ -182,8 +244,40 @@ export default function QuickAddModal() {
           </View>
         </ScrollView>
 
+        {/* Budget Pool Chips (for expenses only) */}
+        {!isIncome && (
+          <>
+            <Text style={styles.sectionLabel}>Budget Pool / Bucket (Optional)</Text>
+            <View style={{ flexDirection: "row", gap: 8, marginBottom: spacing.md }}>
+              {BUCKET_OPTIONS.map((b) => {
+                const isSel = bucket === b.key;
+                return (
+                  <Pressable
+                    key={b.key}
+                    onPress={() => {
+                      Haptics.selectionAsync().catch(() => {});
+                      setBucket(isSel ? undefined : b.key);
+                    }}
+                    style={[
+                      styles.bucketOptionChip,
+                      isSel && styles.bucketOptionChipActive,
+                    ]}
+                  >
+                    <Text style={{ fontSize: 14 }}>{b.emoji}</Text>
+                    <Text style={[styles.bucketOptionChipText, isSel && styles.bucketOptionChipTextActive]}>
+                      {b.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </>
+        )}
+
         {/* Account Pills */}
-        <Text style={styles.sectionLabel}>Account</Text>
+        <Text style={styles.sectionLabel}>
+          {isIncome ? "Deposit / Receiving Account" : "Payment Account / Card"}
+        </Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.md }}>
           <View style={styles.pillRow}>
             {accounts.map((acc) => {
@@ -196,10 +290,19 @@ export default function QuickAddModal() {
                     Haptics.selectionAsync().catch(() => {});
                     setAccountId(acc.id);
                   }}
-                  style={[styles.pill, isSel && styles.pillSelected, { borderLeftColor: acc.color, borderLeftWidth: 3 }]}
+                  style={[
+                    styles.pill,
+                    isSel && (isIncome ? styles.pillSelectedIncome : styles.pillSelected),
+                    { borderLeftColor: acc.color, borderLeftWidth: 3 },
+                  ]}
                 >
                   <Text style={{ fontSize: 16 }}>{acc.emoji}</Text>
-                  <Text style={[styles.pillText, isSel && styles.pillTextSelected]}>{acc.name}</Text>
+                  <View>
+                    <Text style={[styles.pillText, isSel && styles.pillTextSelected]}>{acc.name}</Text>
+                    <Text style={{ fontSize: 10, color: isSel ? "#FFFFFF" : colors.onSurfaceSecondary, fontWeight: "600" }}>
+                      {rm(acc.balance)}
+                    </Text>
+                  </View>
                 </Pressable>
               );
             })}
@@ -212,7 +315,7 @@ export default function QuickAddModal() {
             testID="merchant-input"
             value={merchant}
             onChangeText={setMerchant}
-            placeholder="Merchant (e.g. Tealive, Gigi Coffee)"
+            placeholder={isIncome ? "Payer / Source (e.g. Company Name, Client)" : "Merchant (e.g. Tealive, Gigi Coffee)"}
             placeholderTextColor={colors.onSurfaceSecondary}
             style={styles.input}
           />
@@ -220,7 +323,7 @@ export default function QuickAddModal() {
             testID="note-input"
             value={note}
             onChangeText={setNote}
-            placeholder="Note (optional)"
+            placeholder="Note / Memo (optional)"
             placeholderTextColor={colors.onSurfaceSecondary}
             style={styles.input}
           />
@@ -249,9 +352,15 @@ export default function QuickAddModal() {
           testID="save-txn-btn"
           onPress={handleSave}
           disabled={saving || currentAmt <= 0}
-          style={[styles.saveBtn, (saving || currentAmt <= 0) && { opacity: 0.5 }]}
+          style={[
+            styles.saveBtn,
+            isIncome && { backgroundColor: "#10B981" },
+            (saving || currentAmt <= 0) && { opacity: 0.5 },
+          ]}
         >
-          <Text style={styles.saveBtnText}>{saving ? "Saving…" : "Save Expense"}</Text>
+          <Text style={styles.saveBtnText}>
+            {saving ? "Saving…" : isIncome ? "Deposit Income 💰" : "Save Expense 🍞"}
+          </Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>
@@ -395,6 +504,68 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 22,
     color: colors.onSurface,
+  },
+  typeToggleWrapper: {
+    flexDirection: "row",
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.pill,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    marginBottom: spacing.md,
+  },
+  typeToggleBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  typeToggleBtnActiveExpense: {
+    backgroundColor: colors.brandPrimary,
+    ...shadow.soft,
+  },
+  typeToggleBtnActiveIncome: {
+    backgroundColor: "#10B981",
+    ...shadow.soft,
+  },
+  typeToggleText: {
+    fontWeight: "700",
+    fontSize: 14,
+    color: colors.onSurfaceSecondary,
+  },
+  typeToggleTextActive: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+  },
+  pillSelectedIncome: {
+    backgroundColor: "#10B981",
+    borderColor: "#10B981",
+  },
+  bucketOptionChip: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  bucketOptionChipActive: {
+    backgroundColor: colors.surfaceTertiary,
+    borderColor: colors.brandPrimary,
+  },
+  bucketOptionChipText: {
+    fontWeight: "700",
+    fontSize: 12,
+    color: colors.onSurfaceSecondary,
+  },
+  bucketOptionChipTextActive: {
+    color: colors.brandPrimary,
+    fontWeight: "800",
   },
   saveBtn: {
     backgroundColor: colors.brandPrimary,

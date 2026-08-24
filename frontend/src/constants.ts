@@ -86,7 +86,35 @@ export const ACCOUNT_TEMPLATES: AccountTemplate[] = [
   { name: "Personal Bank Loan", type: "loan", emoji: "🧾", color: "#991B1B", category: "loan", defaultRate: 7.5 },
 ];
 
+export type IncomeCategoryKey =
+  | "Salary"
+  | "Bonus"
+  | "Freelance"
+  | "Dividends"
+  | "Refund"
+  | "Gift"
+  | "Side Hustle"
+  | "Other Income";
+
+export const INCOME_CATEGORIES: {
+  key: IncomeCategoryKey;
+  emoji: string;
+  icon: string;
+  tint: string;
+}[] = [
+  { key: "Salary", emoji: "💼", icon: "cash-outline", tint: "#DCFCE7" },
+  { key: "Bonus", emoji: "🎁", icon: "gift-outline", tint: "#FEF08A" },
+  { key: "Freelance", emoji: "💻", icon: "laptop-outline", tint: "#E0E7FF" },
+  { key: "Dividends", emoji: "📈", icon: "trending-up-outline", tint: "#D1FAE5" },
+  { key: "Refund", emoji: "↩️", icon: "arrow-undo-outline", tint: "#CFFAFE" },
+  { key: "Gift", emoji: "🎉", icon: "sparkles-outline", tint: "#FCE7F3" },
+  { key: "Side Hustle", emoji: "⚡", icon: "flash-outline", tint: "#FEF3C7" },
+  { key: "Other Income", emoji: "🪙", icon: "wallet-outline", tint: "#F3E8FF" },
+];
+
 export function categoryMeta(key?: string | null) {
+  const inc = INCOME_CATEGORIES.find((c) => c.key === key);
+  if (inc) return inc;
   return CATEGORIES.find((c) => c.key === (key as CategoryKey)) ?? CATEGORIES[CATEGORIES.length - 1];
 }
 

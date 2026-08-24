@@ -90,6 +90,8 @@ export function SwipeableTxnRow({
     onDelete(t.id);
   };
 
+  const isIncome = t.type === "income";
+
   return (
     <View style={styles.container}>
       {/* Background Delete Action */}
@@ -108,6 +110,7 @@ export function SwipeableTxnRow({
       <Animated.View
         style={[
           styles.card,
+          isIncome && styles.cardIncome,
           {
             transform: [{ translateX: pan }],
           },
@@ -141,12 +144,16 @@ export function SwipeableTxnRow({
           </View>
 
           <View style={{ alignItems: "flex-end", justifyContent: "center" }}>
-            <Text style={styles.cardAmt}>
-              {viewMode === "money" ? rm(t.amount) : timeCost}
+            <Text style={[styles.cardAmt, isIncome && styles.cardAmtIncome]}>
+              {viewMode === "money"
+                ? `${isIncome ? "+" : ""}${rm(t.amount)}`
+                : `${isIncome ? "+" : ""}${timeCost}`}
             </Text>
-            <View style={styles.timePill}>
-              <Text style={styles.timePillText}>
-                {viewMode === "money" ? `⏱️ ${timeCost}` : rm(t.amount)}
+            <View style={[styles.timePill, isIncome && styles.timePillIncome]}>
+              <Text style={[styles.timePillText, isIncome && styles.timePillTextIncome]}>
+                {viewMode === "money"
+                  ? `${isIncome ? "🌿 +" : "⏱️ "}${timeCost}`
+                  : `${isIncome ? "+" : ""}${rm(t.amount)}`}
               </Text>
             </View>
           </View>
@@ -232,8 +239,22 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
   timePillText: {
+    fontWeight: "600",
+    fontSize: 11,
+    color: colors.onSurfaceSecondary,
+  },
+  cardIncome: {
+    borderColor: "#A7F3D0",
+  },
+  cardAmtIncome: {
+    color: "#059669",
+    fontWeight: "900",
+  },
+  timePillIncome: {
+    backgroundColor: "#DCFCE7",
+  },
+  timePillTextIncome: {
+    color: "#047857",
     fontWeight: "700",
-    fontSize: 10,
-    color: colors.brandPrimary,
   },
 });

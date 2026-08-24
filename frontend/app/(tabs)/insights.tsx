@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 import { PieChart } from "react-native-gifted-charts";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
@@ -19,6 +20,7 @@ import { BudgetSettings, Transaction, WageSettings } from "@/src/types";
 import { categoryMeta, getBackendUrl } from "@/src/constants";
 import {
   amountToWorkHours,
+  formatMonthDisplay,
   formatTimeCost,
   getBobaReaction,
   monthKey,
@@ -55,6 +57,7 @@ export default function Insights() {
       { category: "Shopping", monthlyLimit: 300 },
     ],
   });
+  const [selectedMonth, setSelectedMonth] = useState<string>(monthKey(todayISO()));
   const [loading, setLoading] = useState(false);
   const [insight, setInsight] = useState<{ summary: string; tips: string[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -68,21 +71,66 @@ export default function Insights() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const thisMonth = monthKey(todayISO());
+  // Available unique months sorted descending
+  const availableMonths = useMemo(() => {
+    const set = new Set<string>();
+    set.add(monthKey(todayISO()));
+    txns.forEach((t) => {
+      if (t.date) set.add(monthKey(t.date));
+    });
+    return Array.from(set).sort().reverse();
+  }, [txns]);
+
+  const currentMonthIdx = availableMonths.indexOf(selectedMonth);
+
+  const handlePrevMonth = () => {
+    Haptics.selectionAsync().catch(() => {});
+    if (selectedMonth === "all") {
+      setSelectedMonth(availableMonths[0] || monthKey(todayISO()));
+    } else if (currentMonthIdx < availableMonths.length - 1) {
+      setSelectedMonth(availableMonths[currentMonthIdx + 1]);
+    }
+  };
+
+  const handleNextMonth = () => {
+    Haptics.selectionAsync().catch(() => {});
+    if (selectedMonth === "all") return;
+    if (currentMonthIdx > 0) {
+      setSelectedMonth(availableMonths[currentMonthIdx - 1]);
+    }
+  };
+
   const monthTxns = useMemo(
-    () => txns.filter((t) => monthKey(t.date) === thisMonth && t.amount > 0),
-    [txns, thisMonth]
+    () => txns.filter((t) => (selectedMonth === "all" || monthKey(t.date) === selectedMonth) && t.amount > 0),
+    [txns, selectedMonth]
   );
+
+  const expenseTxns = useMemo(
+    () => monthTxns.filter((t) => t.type !== "income"),
+    [monthTxns]
+  );
+
+  const incomeTxns = useMemo(
+    () => monthTxns.filter((t) => t.type === "income"),
+    [monthTxns]
+  );
+
+  const totalIncome = useMemo(
+    () => incomeTxns.reduce((s, t) => s + t.amount, 0),
+    [incomeTxns]
+  );
+
+  const totalIncomeHours = amountToWorkHours(totalIncome, wage.hourlyRate);
 
   const byCat = useMemo(() => {
     const map = new Map<string, number>();
-    for (const t of monthTxns) {
+    for (const t of expenseTxns) {
       map.set(t.category, (map.get(t.category) ?? 0) + t.amount);
     }
     return Array.from(map.entries())
       .map(([k, v]) => ({ key: k, value: v }))
       .sort((a, b) => b.value - a.value);
-  }, [monthTxns]);
+  }, [expenseTxns]);
 
   const total = byCat.reduce((s, x) => s + x.value, 0);
   const totalWorkHours = amountToWorkHours(total, wage.hourlyRate);
@@ -95,9 +143,9 @@ export default function Insights() {
   }));
 
   const fetchInsights = useCallback(async () => {
-    if (monthTxns.length === 0) {
+    if (expenseTxns.length === 0) {
       setInsight({
-        summary: "No expenses logged this month yet. Log a few transactions and DoughTime will calculate your life energy score! 🥟⏳",
+        summary: `No expenses logged for ${formatMonthDisplay(selectedMonth)}. Log a few transactions and DoughTime will calculate your life energy score! 🥟⏳`,
         tips: ["Set a monthly work-hours spending ceiling.", "Track daily kopi & snacks to avoid life-time leaks."],
       });
       return;
@@ -111,7 +159,7 @@ export default function Insights() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          transactions: monthTxns.slice(0, 100),
+          transactions: expenseTxns.slice(0, 100),
           currency: "RM",
         }),
       });
@@ -124,11 +172,11 @@ export default function Insights() {
     } finally {
       setLoading(false);
     }
-  }, [monthTxns]);
+  }, [expenseTxns, selectedMonth]);
 
   useEffect(() => {
-    if (txns.length && !insight && !loading) fetchInsights();
-  }, [txns.length]);
+    fetchInsights();
+  }, [selectedMonth, txns.length]);
 
   return (
     <SafeAreaView
@@ -144,11 +192,65 @@ export default function Insights() {
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
-        <View style={{ marginBottom: spacing.md }}>
+        <View style={{ marginBottom: spacing.sm }}>
           <Text style={styles.title}>Spending Vibes & Budget</Text>
           <Text style={styles.subtitle}>
-            This month · {rm(total)} ({totalWorkHours.toFixed(1)} hrs of work)
+            {formatMonthDisplay(selectedMonth)} · Spent {rm(total)} ({totalWorkHours.toFixed(1)}h)
           </Text>
+        </View>
+
+        {/* Month Navigator Bar */}
+        <View style={styles.monthNavRow}>
+          <Pressable
+            style={({ pressed }) => [styles.monthNavArrow, pressed && { opacity: 0.7 }]}
+            onPress={handlePrevMonth}
+            disabled={selectedMonth !== "all" && currentMonthIdx >= availableMonths.length - 1}
+          >
+            <Ionicons
+              name="chevron-back"
+              size={18}
+              color={selectedMonth !== "all" && currentMonthIdx >= availableMonths.length - 1 ? colors.borderStrong : colors.onSurface}
+            />
+          </Pressable>
+
+          <Pressable
+            style={styles.monthDisplayPill}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              setSelectedMonth(selectedMonth === "all" ? monthKey(todayISO()) : "all");
+            }}
+          >
+            <Ionicons name="calendar-outline" size={14} color={colors.brandPrimary} />
+            <Text style={styles.monthDisplayText}>{formatMonthDisplay(selectedMonth)}</Text>
+            <Ionicons name="swap-horizontal" size={12} color={colors.onSurfaceSecondary} />
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.monthNavArrow, pressed && { opacity: 0.7 }]}
+            onPress={handleNextMonth}
+            disabled={selectedMonth === "all" || currentMonthIdx <= 0}
+          >
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={selectedMonth === "all" || currentMonthIdx <= 0 ? colors.borderStrong : colors.onSurface}
+            />
+          </Pressable>
+        </View>
+
+        {/* Income vs Expenses Summary Banner */}
+        <View style={styles.incomeExpenseBanner}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={styles.ieLabel}>💸 Total Spent</Text>
+            <Text style={styles.ieExpenseVal}>{rm(total)}</Text>
+            <Text style={styles.ieSub}>{totalWorkHours.toFixed(1)} hrs of work</Text>
+          </View>
+          <View style={styles.ieDivider} />
+          <View style={{ flex: 1, gap: 2, alignItems: "flex-end" }}>
+            <Text style={styles.ieLabel}>💰 Total Income</Text>
+            <Text style={styles.ieIncomeVal}>+{rm(totalIncome)}</Text>
+            <Text style={styles.ieSub}>+{totalIncomeHours.toFixed(1)} hrs freed 🌿</Text>
+          </View>
         </View>
 
         {byCat.length === 0 ? (
@@ -158,7 +260,7 @@ export default function Insights() {
               style={styles.emptyImg}
               contentFit="contain"
             />
-            <Text style={styles.emptyTitle}>Your Mascot is Waiting!</Text>
+            <Text style={styles.emptyTitle}>No Expenses in {formatMonthDisplay(selectedMonth)}</Text>
             <Text style={styles.emptyText}>
               Log expenses to see your DoughTime spending personality and life energy score.
             </Text>
@@ -475,6 +577,74 @@ const styles = StyleSheet.create({
     color: colors.brandPrimary,
     fontWeight: "700",
     fontSize: 12,
+  },
+  monthNavRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.md,
+  },
+  monthNavArrow: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  monthDisplayPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  monthDisplayText: {
+    fontWeight: "800",
+    fontSize: 13,
+    color: colors.onSurface,
+  },
+  incomeExpenseBanner: {
+    flexDirection: "row",
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    ...shadow.card,
+  },
+  ieLabel: {
+    fontWeight: "700",
+    fontSize: 11,
+    color: colors.onSurfaceSecondary,
+    textTransform: "uppercase",
+  },
+  ieExpenseVal: {
+    fontWeight: "900",
+    fontSize: 18,
+    color: colors.onSurface,
+  },
+  ieIncomeVal: {
+    fontWeight: "900",
+    fontSize: 18,
+    color: "#059669",
+  },
+  ieSub: {
+    fontWeight: "600",
+    fontSize: 11,
+    color: colors.onSurfaceSecondary,
+  },
+  ieDivider: {
+    width: 1,
+    backgroundColor: colors.borderStrong,
+    marginHorizontal: spacing.md,
   },
   emptyBox: {
     alignItems: "center",

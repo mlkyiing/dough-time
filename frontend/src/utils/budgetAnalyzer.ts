@@ -172,9 +172,12 @@ export function calculateBucketSpending(
   let comfortCount = 0;
 
   for (const t of transactions) {
+    // Only count expenses (exclude income records)
+    if (t.type === "income") continue;
+
     if (t.date && t.date.startsWith(monthISO) && t.amount > 0) {
       totalSpent += t.amount;
-      const bucket = getCategoryBucket(t.category);
+      const bucket = t.bucket || getCategoryBucket(t.category);
       if (bucket === "comfort") {
         comfortSpent += t.amount;
         comfortCount += 1;

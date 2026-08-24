@@ -25,7 +25,9 @@ export type Account = {
 
 export type Transaction = {
   id: string;
-  amount: number; // positive = expense, negative = income / repayment
+  amount: number; // positive number
+  type?: "expense" | "income"; // default "expense"
+  bucket?: BudgetBucket; // "needs" | "comfort" | "savings"
   category: string;
   accountId: string;
   note?: string;

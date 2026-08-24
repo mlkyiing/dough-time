@@ -14,6 +14,14 @@ export function monthKey(iso: string) {
   return iso.slice(0, 7); // YYYY-MM
 }
 
+export function formatMonthDisplay(mKey: string) {
+  if (mKey === "all") return "All Time";
+  const [year, month] = mKey.split("-");
+  if (!year || !month) return mKey;
+  const d = new Date(parseInt(year), parseInt(month) - 1, 1);
+  return d.toLocaleDateString("en-MY", { month: "long", year: "numeric" });
+}
+
 export function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
