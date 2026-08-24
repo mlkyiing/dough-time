@@ -121,6 +121,8 @@ class VaultMergeRequest(BaseModel):
     sync_code: Optional[str] = None
     accounts: List[dict] = []
     transactions: List[dict] = []
+    deleted_txn_ids: List[str] = []
+    deleted_account_ids: List[str] = []
     wage_settings: Optional[dict] = None
     budget_settings: Optional[dict] = None
     last_modified: Optional[str] = None
@@ -692,18 +694,32 @@ async def sync_merge(req: VaultMergeRequest):
         sync_id, sync_code, data_json, cloud_last_mod, _ = row
         cloud_data = json.loads(data_json)
         
-        # Smart transaction merge: union by transaction id, sort descending by date
+        # Smart transaction merge:
         cloud_txns = {t.get("id"): t for t in cloud_data.get("transactions", []) if t.get("id")}
+        
+        # Remove any deleted transaction tombstones explicitly requested by client
+        for did in (req.deleted_txn_ids or []):
+            cloud_txns.pop(did, None)
+            
+        # Add / update client transactions (excluding any deleted ones)
+        del_txn_set = set(req.deleted_txn_ids or [])
         for t in req.transactions:
-            if t.get("id"):
+            if t.get("id") and t.get("id") not in del_txn_set:
                 cloud_txns[t["id"]] = t
         merged_txns = sorted(list(cloud_txns.values()), key=lambda x: (x.get("date", ""), x.get("createdAt", "")), reverse=True)
         
-        # Smart account merge: union by account id
+        # Smart account merge:
         cloud_accs = {a.get("id"): a for a in cloud_data.get("accounts", []) if a.get("id")}
+        
+        # Remove any deleted account tombstones explicitly requested by client
+        for did in (req.deleted_account_ids or []):
+            cloud_accs.pop(did, None)
+            
+        del_acc_set = set(req.deleted_account_ids or [])
         for a in req.accounts:
-            if a.get("id"):
-                cloud_accs[a["id"]] = a
+            aid = a.get("id")
+            if aid and aid not in del_acc_set:
+                cloud_accs[aid] = a
         merged_accs = list(cloud_accs.values())
         
         merged_wage = req.wage_settings or cloud_data.get("wage_settings")

@@ -18,6 +18,8 @@ const K_WAGE = "dt.wage.v3";
 const K_BUDGET = "dt.budget.v3";
 const K_SYNC_SESSION = "dt.sync.session.v1";
 const K_LAST_MODIFIED = "dt.last.modified.v1";
+const K_DELETED_TXNS = "dt.deleted.txns.v1";
+const K_DELETED_ACCS = "dt.deleted.accs.v1";
 
 export const DEFAULT_WAGE: WageSettings = {
   mode: "salary",
@@ -244,16 +246,56 @@ export async function pullCloudRestore(
   }
 }
 
+async function getDeletedTxnIds(): Promise<string[]> {
+  const raw = await AsyncStorage.getItem(K_DELETED_TXNS);
+  return raw ? JSON.parse(raw) : [];
+}
+
+async function addDeletedTxnId(id: string) {
+  const current = await getDeletedTxnIds();
+  if (!current.includes(id)) {
+    current.push(id);
+    await AsyncStorage.setItem(K_DELETED_TXNS, JSON.stringify(current));
+  }
+}
+
+async function clearDeletedTxnIds(ids: string[]) {
+  const current = await getDeletedTxnIds();
+  const next = current.filter((x) => !ids.includes(x));
+  await AsyncStorage.setItem(K_DELETED_TXNS, JSON.stringify(next));
+}
+
+async function getDeletedAccountIds(): Promise<string[]> {
+  const raw = await AsyncStorage.getItem(K_DELETED_ACCS);
+  return raw ? JSON.parse(raw) : [];
+}
+
+async function addDeletedAccountId(id: string) {
+  const current = await getDeletedAccountIds();
+  if (!current.includes(id)) {
+    current.push(id);
+    await AsyncStorage.setItem(K_DELETED_ACCS, JSON.stringify(current));
+  }
+}
+
+async function clearDeletedAccountIds(ids: string[]) {
+  const current = await getDeletedAccountIds();
+  const next = current.filter((x) => !ids.includes(x));
+  await AsyncStorage.setItem(K_DELETED_ACCS, JSON.stringify(next));
+}
+
 /**
- * Merges cloud data with local data (two-way merge)
+ * Merges cloud data with local data (two-way merge with tombstone deletion support)
  */
 export async function mergeWithCloud(): Promise<{ success: boolean; message?: string }> {
   const session = await initOrGetSyncSession();
-  const [accounts, transactions, wage, budget] = await Promise.all([
+  const [accounts, transactions, wage, budget, deletedTxnIds, deletedAccIds] = await Promise.all([
     getAccounts(),
     getTransactions(),
     getWageSettings(),
     getBudgetSettings(),
+    getDeletedTxnIds(),
+    getDeletedAccountIds(),
   ]);
 
   notifySync("syncing", session);
@@ -268,6 +310,8 @@ export async function mergeWithCloud(): Promise<{ success: boolean; message?: st
         sync_code: session.syncCode,
         accounts,
         transactions,
+        deleted_txn_ids: deletedTxnIds,
+        deleted_account_ids: deletedAccIds,
         wage_settings: wage,
         budget_settings: budget,
         last_modified: new Date().toISOString(),
@@ -284,6 +328,10 @@ export async function mergeWithCloud(): Promise<{ success: boolean; message?: st
     if (data.transactions) await setTransactions(data.transactions, false);
     if (data.wage_settings) await setWageSettings(data.wage_settings, false);
     if (data.budget_settings) await setBudgetSettings(data.budget_settings, false);
+
+    // Clear processed tombstones
+    if (deletedTxnIds.length > 0) await clearDeletedTxnIds(deletedTxnIds);
+    if (deletedAccIds.length > 0) await clearDeletedAccountIds(deletedAccIds);
 
     const updatedSession: SyncSession = {
       ...session,
@@ -381,8 +429,11 @@ export async function upsertAccount(a: Account) {
 }
 
 export async function deleteAccount(idToRemove: string) {
+  await addDeletedAccountId(idToRemove);
   const list = (await getAccounts()).filter((a) => a.id !== idToRemove);
-  await setAccounts(list);
+  await setAccounts(list, false);
+  await touchModified();
+  mergeWithCloud().catch(() => {});
 }
 
 export async function getTransactions(): Promise<Transaction[]> {
@@ -482,6 +533,7 @@ export async function deleteTransaction(idToRemove: string) {
   const target = list.find((t) => t.id === idToRemove);
   if (!target) return;
 
+  await addDeletedTxnId(idToRemove);
   await setTransactions(list.filter((t) => t.id !== idToRemove), false);
   const accs = await getAccounts();
   const idx = accs.findIndex((a) => a.id === target.accountId);
@@ -495,6 +547,7 @@ export async function deleteTransaction(idToRemove: string) {
     await setAccounts(accs, false);
   }
   await touchModified();
+  mergeWithCloud().catch(() => {});
 }
 
 // ---------- File Export & Import ----------
