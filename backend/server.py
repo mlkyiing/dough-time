@@ -717,13 +717,8 @@ async def sync_merge(req: VaultMergeRequest):
             cloud_accs.pop(did, None)
             
         # Identify transactions newly added on the CLIENT that the cloud doesn't have yet
-        existing_cloud_txn_ids = set(cloud_data.get("transactions", []))
-        if cloud_data.get("transactions"):
-            existing_cloud_txn_ids = {t.get("id") for t in cloud_data["transactions"] if t.get("id")}
-        else:
-            existing_cloud_txn_ids = set()
-            
-        new_client_txns = [t for t in req.transactions if t.get("id") and t.get("id") not in existing_cloud_txn_ids and t.get("id") not in del_txn_set]
+        existing_cloud_txn_ids = {t.get("id") for t in cloud_data.get("transactions", []) if isinstance(t, dict) and t.get("id")}
+        new_client_txns = [t for t in req.transactions if isinstance(t, dict) and t.get("id") and t.get("id") not in existing_cloud_txn_ids and t.get("id") not in del_txn_set]
         
         del_acc_set = set(req.deleted_account_ids or [])
         for a in req.accounts:
