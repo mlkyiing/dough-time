@@ -105,14 +105,28 @@ export default function Transactions() {
     });
   }, [txns, selectedMonth, typeFilter, categoryFilter]);
 
+  const monthTxns = useMemo(
+    () => (selectedMonth === "all" ? txns : txns.filter((t) => monthKey(t.date) === selectedMonth)),
+    [txns, selectedMonth]
+  );
+
+  const monthExpensesCount = useMemo(
+    () => monthTxns.filter((t) => t.type !== "income").length,
+    [monthTxns]
+  );
+
+  const monthIncomeCount = useMemo(
+    () => monthTxns.filter((t) => t.type === "income").length,
+    [monthTxns]
+  );
+
   // Month stats for banner
   const monthStats = useMemo(() => {
-    const monthTxns = selectedMonth === "all" ? txns : txns.filter((t) => monthKey(t.date) === selectedMonth);
     const expenses = monthTxns.filter((t) => t.type !== "income").reduce((s, t) => s + t.amount, 0);
     const income = monthTxns.filter((t) => t.type === "income").reduce((s, t) => s + t.amount, 0);
     const net = income - expenses;
     return { expenses, income, net };
-  }, [txns, selectedMonth]);
+  }, [monthTxns]);
 
   const totalExpenseHours = amountToWorkHours(monthStats.expenses, wage.hourlyRate);
   const totalIncomeHours = amountToWorkHours(monthStats.income, wage.hourlyRate);
@@ -274,7 +288,7 @@ export default function Transactions() {
           }}
         >
           <Text style={[styles.typeSegmentText, typeFilter === "all" && styles.typeSegmentTextActive]}>
-            All ({filtered.length})
+            All ({monthTxns.length})
           </Text>
         </Pressable>
         <Pressable
@@ -286,7 +300,7 @@ export default function Transactions() {
           }}
         >
           <Text style={[styles.typeSegmentText, typeFilter === "expense" && styles.typeSegmentTextActive]}>
-            💸 Expenses
+            💸 Expenses ({monthExpensesCount})
           </Text>
         </Pressable>
         <Pressable
@@ -298,7 +312,7 @@ export default function Transactions() {
           }}
         >
           <Text style={[styles.typeSegmentText, typeFilter === "income" && styles.typeSegmentTextActive]}>
-            💰 Income
+            💰 Income ({monthIncomeCount})
           </Text>
         </Pressable>
       </View>
@@ -498,7 +512,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   typeSegmentBtnActive: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.onSurface,
     ...shadow.soft,
   },
   typeSegmentBtnActiveExpense: {
