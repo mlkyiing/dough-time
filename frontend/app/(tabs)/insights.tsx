@@ -350,10 +350,10 @@ export default function Insights() {
             <View style={[styles.card, { marginTop: spacing.md }]}>
               <View style={styles.coachHeader}>
                 <View style={styles.coachTitleWrap}>
-                  <AnimatedMascot variant="mentor" size={54} interactive={true} />
-                  <View>
-                    <Text style={styles.cardTitle}>DoughTime AI Coach 🥟✨</Text>
-                    <Text style={styles.coachRole}>Financial & Life-Time Mentor (Tap for advice)</Text>
+                  <AnimatedMascot variant="mentor" size={50} interactive={true} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.cardTitle} numberOfLines={1}>DoughTime AI Coach 🥟✨</Text>
+                    <Text style={styles.coachRole} numberOfLines={1}>Financial & Life-Time Mentor</Text>
                   </View>
                 </View>
 
@@ -361,8 +361,9 @@ export default function Insights() {
                   testID="refresh-insights-btn"
                   onPress={fetchInsights}
                   disabled={loading}
-                  style={styles.refreshBtn}
+                  style={({ pressed }) => [styles.refreshBtn, pressed && { opacity: 0.7 }]}
                 >
+                  <Ionicons name="refresh" size={13} color={colors.brandPrimary} />
                   <Text style={styles.link}>{loading ? "…" : "Refresh"}</Text>
                 </Pressable>
               </View>
@@ -484,11 +485,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    gap: 8,
   },
   coachTitleWrap: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+    minWidth: 0,
   },
   coachAvatar: {
     width: 44,
@@ -501,17 +505,23 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     fontSize: 15,
     color: colors.onSurface,
+    letterSpacing: -0.2,
   },
   coachRole: {
     fontWeight: "500",
     fontSize: 11,
     color: colors.onSurfaceSecondary,
+    marginTop: 1,
   },
   refreshBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     backgroundColor: colors.surfaceTertiary,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: radius.pill,
+    flexShrink: 0,
   },
   link: {
     color: colors.brandPrimary,
