@@ -422,9 +422,13 @@ export async function setAccounts(accs: Account[], triggerSync = true) {
 
 export async function upsertAccount(a: Account) {
   const list = await getAccounts();
+  const accWithTimestamp: Account = {
+    ...a,
+    updatedAt: new Date().toISOString(),
+  };
   const idx = list.findIndex((x) => x.id === a.id);
-  if (idx >= 0) list[idx] = a;
-  else list.push(a);
+  if (idx >= 0) list[idx] = accWithTimestamp;
+  else list.push(accWithTimestamp);
   await setAccounts(list);
 }
 

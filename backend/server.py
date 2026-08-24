@@ -709,33 +709,64 @@ async def sync_merge(req: VaultMergeRequest):
         merged_txns = sorted(list(cloud_txns.values()), key=lambda x: (x.get("date", ""), x.get("createdAt", "")), reverse=True)
         
         # Smart account merge:
+        # Ground truth balances reside on cloud_accs (which already has shortcut deductions applied)
         cloud_accs = {a.get("id"): a for a in cloud_data.get("accounts", []) if a.get("id")}
         
         # Remove any deleted account tombstones explicitly requested by client
         for did in (req.deleted_account_ids or []):
             cloud_accs.pop(did, None)
             
-        # Identify transactions that were added on the cloud (e.g. by iOS shortcut) that the client doesn't have yet
-        req_txn_ids = {t.get("id") for t in req.transactions if t.get("id")}
-        new_cloud_txns = [t for tid, t in cloud_txns.items() if tid not in req_txn_ids]
+        # Identify transactions newly added on the CLIENT that the cloud doesn't have yet
+        existing_cloud_txn_ids = set(cloud_data.get("transactions", []))
+        if cloud_data.get("transactions"):
+            existing_cloud_txn_ids = {t.get("id") for t in cloud_data["transactions"] if t.get("id")}
+        else:
+            existing_cloud_txn_ids = set()
+            
+        new_client_txns = [t for t in req.transactions if t.get("id") and t.get("id") not in existing_cloud_txn_ids and t.get("id") not in del_txn_set]
         
         del_acc_set = set(req.deleted_account_ids or [])
         for a in req.accounts:
             aid = a.get("id")
-            if aid and aid not in del_acc_set:
-                acc_obj = dict(a)
-                # Deduct / apply any new transactions added by shortcut on cloud
-                for n_txn in new_cloud_txns:
-                    if n_txn.get("accountId") == aid:
-                        amt = float(n_txn.get("amount") or 0)
-                        is_income = (n_txn.get("type") == "income")
-                        acc_type = acc_obj.get("type", "bank")
-                        is_liability = acc_type in ["credit_card", "loan"]
-                        if is_income:
-                            acc_obj["balance"] = round(acc_obj.get("balance", 0) + (-amt if is_liability else amt), 2)
-                        else:
-                            acc_obj["balance"] = round(acc_obj.get("balance", 0) + (amt if is_liability else -amt), 2)
-                cloud_accs[aid] = acc_obj
+            if not aid or aid in del_acc_set:
+                continue
+                
+            if aid in cloud_accs:
+                # Merge metadata from client, but protect ground-truth cloud balance
+                c_acc = dict(cloud_accs[aid])
+                c_acc["name"] = a.get("name", c_acc.get("name"))
+                c_acc["emoji"] = a.get("emoji", c_acc.get("emoji"))
+                c_acc["color"] = a.get("color", c_acc.get("color"))
+                c_acc["type"] = a.get("type", c_acc.get("type"))
+                if "creditLimit" in a: c_acc["creditLimit"] = a["creditLimit"]
+                if "dueDay" in a: c_acc["dueDay"] = a["dueDay"]
+                if "reminderEnabled" in a: c_acc["reminderEnabled"] = a["reminderEnabled"]
+                if "interestRate" in a: c_acc["interestRate"] = a["interestRate"]
+                if "monthlyInstallment" in a: c_acc["monthlyInstallment"] = a["monthlyInstallment"]
+                
+                # If the client explicitly modified the account more recently (manual edit)
+                client_updated_at = a.get("updatedAt", "")
+                cloud_updated_at = c_acc.get("updatedAt", "")
+                if client_updated_at and client_updated_at > cloud_updated_at:
+                    c_acc["balance"] = a.get("balance", c_acc.get("balance", 0))
+                    c_acc["updatedAt"] = client_updated_at
+                else:
+                    # Apply any newly added client transactions to the cloud balance
+                    for c_txn in new_client_txns:
+                        if c_txn.get("accountId") == aid:
+                            amt = float(c_txn.get("amount") or 0)
+                            is_income = (c_txn.get("type") == "income")
+                            acc_type = c_acc.get("type", "bank")
+                            is_liability = acc_type in ["credit_card", "loan"]
+                            if is_income:
+                                c_acc["balance"] = round(c_acc.get("balance", 0) + (-amt if is_liability else amt), 2)
+                            else:
+                                c_acc["balance"] = round(c_acc.get("balance", 0) + (amt if is_liability else -amt), 2)
+                cloud_accs[aid] = c_acc
+            else:
+                # Brand new account created on client
+                cloud_accs[aid] = a
+                
         merged_accs = list(cloud_accs.values())
         
         merged_wage = req.wage_settings or cloud_data.get("wage_settings")
