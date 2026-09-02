@@ -229,13 +229,14 @@ export default function Accounts() {
       <CuteAppBackground />
       {/* Header */}
       <View style={styles.header}>
-        <View style={{ gap: 2 }}>
-          <Text style={styles.title}>Accounts & Net Worth</Text>
-          <Text style={styles.subtitle}>
-            Net Worth {rm(netWorth)} ({netWorthHours >= 0 ? `+${netWorthHours.toFixed(1)}h work saved` : `${netWorthHours.toFixed(1)}h work`})
+        <View style={styles.headerTitleWrap}>
+          <Text style={styles.title} numberOfLines={1}>Accounts</Text>
+          <Text style={styles.subtitle} numberOfLines={1}>
+            Net Worth: <Text style={{ fontWeight: "800", color: netWorth >= 0 ? "#059669" : "#DC2626" }}>{rm(netWorth)}</Text>
+            {` · ${netWorthHours >= 0 ? `+${netWorthHours.toFixed(0)}h saved` : `${Math.abs(netWorthHours).toFixed(0)}h debt`}`}
           </Text>
         </View>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <View style={styles.headerActions}>
           <Pressable
             testID="transfer-btn"
             style={({ pressed }) => [styles.transferBtn, pressed && { transform: [{ scale: 0.95 }] }]}
@@ -247,7 +248,7 @@ export default function Accounts() {
               setTransferModalOpen(true);
             }}
           >
-            <Ionicons name="swap-horizontal" size={16} color="#FFFFFF" />
+            <Ionicons name="swap-horizontal" size={15} color="#FFFFFF" />
             <Text style={styles.transferBtnText}>Transfer</Text>
           </Pressable>
           <Pressable
@@ -258,7 +259,7 @@ export default function Accounts() {
               setPickerOpen(true);
             }}
           >
-            <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
+            <Ionicons name="add" size={20} color={colors.onBrandPrimary} />
           </Pressable>
         </View>
       </View>
@@ -282,12 +283,13 @@ export default function Accounts() {
 
         {/* Net Worth Summary Card (Assets vs Liabilities) */}
         <View style={styles.netWorthCard}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: spacing.md }}>
-            <AnimatedMascot variant="rich" size={48} interactive={true} />
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: spacing.md }}>
+            <AnimatedMascot variant="rich" size={42} interactive={true} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontWeight: "800", fontSize: 14, color: colors.onSurface }}>DoughTime Vault & Stash 🪙</Text>
-              <Text style={{ fontWeight: "500", fontSize: 11, color: colors.onSurfaceSecondary }}>
-                True Net Worth: {rm(netWorth)} ({netWorthHours >= 0 ? `+${netWorthHours.toFixed(1)}h saved` : `${netWorthHours.toFixed(1)}h`})
+              <Text style={{ fontWeight: "600", fontSize: 11, color: colors.onSurfaceSecondary }}>
+                True Net Worth: <Text style={{ color: netWorth >= 0 ? "#059669" : "#DC2626", fontWeight: "800" }}>{rm(netWorth)}</Text>
+                {` (${netWorthHours >= 0 ? `+${netWorthHours.toFixed(1)}h freedom` : `${netWorthHours.toFixed(1)}h debt`})`}
               </Text>
             </View>
           </View>
@@ -306,16 +308,17 @@ export default function Accounts() {
           </View>
         </View>
 
-        {/* Cloud Vault & Phone Backup Banner */}
-        <Pressable
-          style={({ pressed }) => [styles.cloudVaultBanner, pressed && { opacity: 0.92, transform: [{ scale: 0.99 }] }]}
-          onPress={() => {
-            Haptics.selectionAsync().catch(() => {});
-            setSyncModalOpen(true);
-          }}
-        >
-          <View style={styles.cloudVaultLeft}>
-            <View style={styles.cloudVaultIconWrap}>
+        {/* Compact Quick Utilities Row: Cloud Sync & Wage Setting */}
+        <View style={styles.utilityStrip}>
+          {/* Cloud Vault Pill */}
+          <Pressable
+            style={({ pressed }) => [styles.utilityPill, pressed && { opacity: 0.85 }]}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              setSyncModalOpen(true);
+            }}
+          >
+            <View style={styles.utilityIconWrap}>
               <Ionicons
                 name={
                   syncStatus === "syncing"
@@ -324,13 +327,13 @@ export default function Accounts() {
                     ? "cloud-offline"
                     : "cloud-done"
                 }
-                size={22}
+                size={16}
                 color={colors.brandPrimary}
               />
             </View>
-            <View style={{ flex: 1, gap: 2 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <Text style={styles.cloudVaultTitle}>Cloud Vault & Phone Transfer</Text>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                <Text style={styles.utilityTitle} numberOfLines={1}>Cloud Vault</Text>
                 <View
                   style={[
                     styles.syncDotSmall,
@@ -345,38 +348,31 @@ export default function Accounts() {
                   ]}
                 />
               </View>
-              <Text style={styles.cloudVaultSub}>
-                {syncSession?.syncCode ? `Sync Code: ${syncSession.syncCode} · Tap to manage` : "Auto-backup enabled"}
+              <Text style={styles.utilitySub} numberOfLines={1}>
+                {syncSession?.syncCode ? syncSession.syncCode : "Synced"}
               </Text>
             </View>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.onSurfaceSecondary} />
-        </Pressable>
+          </Pressable>
 
-        {/* Wage Profile Quick Pill */}
-        <Pressable
-          style={({ pressed }) => [styles.wageCard, pressed && { opacity: 0.92 }]}
-          onPress={() => {
-            Haptics.selectionAsync().catch(() => {});
-            setWageModalOpen(true);
-          }}
-        >
-          <View style={styles.wageCardLeft}>
-            <View style={styles.wageIconWrap}>
-              <Text style={{ fontSize: 20 }}>⚡</Text>
+          {/* Wage Rate Pill */}
+          <Pressable
+            style={({ pressed }) => [styles.utilityPill, pressed && { opacity: 0.85 }]}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              setWageModalOpen(true);
+            }}
+          >
+            <View style={[styles.utilityIconWrap, { backgroundColor: "#FEF9C3" }]}>
+              <Text style={{ fontSize: 13 }}>⚡</Text>
             </View>
-            <View style={{ flex: 1, gap: 1 }}>
-              <Text style={styles.wageCardTitle}>Work Hourly Rate</Text>
-              <Text style={styles.wageCardSub}>
-                RM {wage.hourlyRate.toFixed(2)}/hr ({wage.hoursPerWeek}h work week)
+            <View style={{ flex: 1 }}>
+              <Text style={styles.utilityTitle} numberOfLines={1}>Hourly Wage</Text>
+              <Text style={styles.utilitySub} numberOfLines={1}>
+                RM {wage.hourlyRate.toFixed(2)}/hr
               </Text>
             </View>
-          </View>
-          <View style={styles.wageCardBadge}>
-            <Text style={styles.wageCardBadgeText}>Configure</Text>
-            <Ionicons name="chevron-forward" size={13} color={colors.brandPrimary} />
-          </View>
-        </Pressable>
+          </Pressable>
+        </View>
 
         {/* Category Segment Tabs */}
         <ScrollView
@@ -528,8 +524,8 @@ export default function Accounts() {
         account={editingAccount}
         wage={wage}
         onClose={() => setEditingAccount(null)}
-        onSave={async (updated) => {
-          await upsertAccount(updated);
+        onSave={async (updated, note) => {
+          await upsertAccount(updated, note);
           load();
         }}
         onDelete={async (id) => {
@@ -801,6 +797,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
+  headerTitleWrap: {
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexShrink: 0,
+  },
   title: {
     fontWeight: "800",
     fontSize: 22,
@@ -810,16 +816,16 @@ const styles = StyleSheet.create({
   subtitle: {
     fontWeight: "600",
     color: colors.onSurfaceSecondary,
-    fontSize: 13,
+    fontSize: 12,
     marginTop: 2,
   },
   transferBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
+    gap: 4,
     backgroundColor: colors.brandPrimary,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
     borderRadius: radius.pill,
     ...shadow.glow,
   },
@@ -830,9 +836,9 @@ const styles = StyleSheet.create({
   },
   iconBtn: {
     backgroundColor: colors.brandPrimary,
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
     ...shadow.glow,
@@ -875,10 +881,46 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.lg,
     padding: spacing.md,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
     borderWidth: 1,
     borderColor: colors.borderStrong,
     ...shadow.soft,
+  },
+  utilityStrip: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  utilityPill: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    ...shadow.soft,
+  },
+  utilityIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#DCFCE7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  utilityTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.onSurface,
+  },
+  utilitySub: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: colors.onSurfaceSecondary,
+    marginTop: 1,
   },
   cloudVaultBanner: {
     flexDirection: "row",

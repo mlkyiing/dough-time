@@ -24,7 +24,7 @@ interface Props {
   account: Account | null;
   wage: WageSettings;
   onClose: () => void;
-  onSave: (updated: Account) => void;
+  onSave: (updated: Account, adjustmentNote?: string) => void;
   onDelete: (id: string) => void;
 }
 
@@ -45,6 +45,7 @@ export function EditAccountModal({
   const [rate, setRate] = useState("");
   const [dueDay, setDueDay] = useState("");
   const [installment, setInstallment] = useState("");
+  const [adjustmentNote, setAdjustmentNote] = useState("");
 
   useEffect(() => {
     if (account) {
@@ -54,11 +55,14 @@ export function EditAccountModal({
       setRate(account.interestRate ? String(account.interestRate) : "");
       setDueDay(account.dueDay ? String(account.dueDay) : "");
       setInstallment(account.monthlyInstallment ? String(account.monthlyInstallment) : "");
+      setAdjustmentNote("");
     }
   }, [account]);
 
   const balanceNum = parseFloat(balance.replace(/,/g, "")) || 0;
   const workHours = amountToWorkHours(balanceNum, wage.hourlyRate);
+  const oldBalance = account.balance || 0;
+  const diff = +(balanceNum - oldBalance).toFixed(2);
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -76,7 +80,7 @@ export function EditAccountModal({
       monthlyInstallment: installment ? parseFloat(installment.replace(/,/g, "")) || undefined : undefined,
     };
 
-    onSave(updated);
+    onSave(updated, adjustmentNote.trim() || undefined);
     if (updated.reminderEnabled && updated.dueDay) {
       await scheduleLoanRepaymentReminder(updated, wage.hourlyRate);
     }
@@ -176,6 +180,34 @@ export function EditAccountModal({
                   Equivalent to <Text style={{ fontWeight: "800", color: colors.brandPrimary }}>{workHours.toFixed(1)} hours</Text> of your work
                 </Text>
               </View>
+
+              {/* Live Adjustment Alert Notice */}
+              {diff !== 0 && (
+                <View style={styles.adjustmentAlertCard}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Text style={{ fontSize: 16 }}>⚖️</Text>
+                    <Text style={styles.adjustmentAlertTitle}>
+                      {isDebt
+                        ? diff > 0
+                          ? `Debt Addition of +${rm(Math.abs(diff))}`
+                          : `Debt Deduction of -${rm(Math.abs(diff))}`
+                        : diff > 0
+                        ? `Balance Addition of +${rm(Math.abs(diff))}`
+                        : `Balance Deduction of -${rm(Math.abs(diff))}`}
+                    </Text>
+                  </View>
+                  <Text style={styles.adjustmentAlertSub}>
+                    Will be automatically recorded in transactions ({rm(oldBalance)} ➔ {rm(balanceNum)})
+                  </Text>
+                  <TextInput
+                    value={adjustmentNote}
+                    onChangeText={setAdjustmentNote}
+                    placeholder="Reason / Memo (e.g. Statement Sync, Cash Out)"
+                    placeholderTextColor={colors.onSurfaceSecondary}
+                    style={styles.adjustmentNoteInput}
+                  />
+                </View>
+              )}
             </View>
 
             {/* Credit Limit for Cards */}
@@ -380,5 +412,35 @@ const styles = StyleSheet.create({
     color: colors.onBrandPrimary,
     fontWeight: "800",
     fontSize: 15,
+  },
+  adjustmentAlertCard: {
+    backgroundColor: "#FEF3C7",
+    borderWidth: 1,
+    borderColor: "#FCD34D",
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+    gap: 4,
+  },
+  adjustmentAlertTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#92400E",
+  },
+  adjustmentAlertSub: {
+    fontSize: 11,
+    color: "#B45309",
+    fontWeight: "500",
+  },
+  adjustmentNoteInput: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    fontSize: 12,
+    color: colors.onSurface,
+    marginTop: 4,
   },
 });

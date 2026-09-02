@@ -10,6 +10,7 @@ import {
   VaultSnapshot,
   WageSettings,
 } from "./types";
+import { rm } from "./format";
 
 const K_ACCOUNTS = "dm.accounts.v3";
 const K_TXNS = "dm.transactions.v3";
@@ -420,13 +421,100 @@ export async function setAccounts(accs: Account[], triggerSync = true) {
   if (triggerSync) await touchModified();
 }
 
-export async function upsertAccount(a: Account) {
+export async function upsertAccount(
+  a: Account,
+  balanceAdjustmentNote?: string,
+  recordBalanceChange = true
+) {
   const list = await getAccounts();
   const accWithTimestamp: Account = {
     ...a,
     updatedAt: new Date().toISOString(),
   };
   const idx = list.findIndex((x) => x.id === a.id);
+  const oldAcc = idx >= 0 ? list[idx] : null;
+
+  if (recordBalanceChange) {
+    const isDebt = isLiabilityAccount(a.type);
+
+    if (oldAcc !== null) {
+      const oldBal = oldAcc.balance ?? 0;
+      const newBal = a.balance ?? 0;
+      const diff = +(newBal - oldBal).toFixed(2);
+
+      if (diff !== 0) {
+        const isIncrease = diff > 0;
+        const absDiff = Math.abs(diff);
+
+        let txnType: "income" | "expense" = "income";
+        let category = isDebt ? "Loan / Debt" : "Balance Adjustment";
+        let merchantTitle = "Manual Balance Adjustment ⚖️";
+
+        if (isDebt) {
+          if (isIncrease) {
+            // Debt owed increased
+            txnType = "expense";
+            merchantTitle = `${a.name} Debt Addition ⚖️`;
+          } else {
+            // Debt owed reduced
+            txnType = "income";
+            merchantTitle = `${a.name} Debt Deduction ⚖️`;
+          }
+        } else {
+          if (isIncrease) {
+            // Asset balance increased (addition / deposit)
+            txnType = "income";
+            merchantTitle = `${a.name} Addition ⚖️`;
+          } else {
+            // Asset balance decreased (deduction / withdrawal)
+            txnType = "expense";
+            merchantTitle = `${a.name} Deduction ⚖️`;
+          }
+        }
+
+        const autoNote = isDebt
+          ? isIncrease
+            ? `Manual debt addition: ${rm(oldBal)} ➔ ${rm(newBal)} (+${rm(absDiff)})`
+            : `Manual debt deduction: ${rm(oldBal)} ➔ ${rm(newBal)} (-${rm(absDiff)})`
+          : isIncrease
+          ? `Manual balance addition: ${rm(oldBal)} ➔ ${rm(newBal)} (+${rm(absDiff)})`
+          : `Manual balance deduction: ${rm(oldBal)} ➔ ${rm(newBal)} (-${rm(absDiff)})`;
+
+        const txns = await getTransactions();
+        const adjustmentTxn: Transaction = {
+          id: id(),
+          amount: absDiff,
+          type: txnType,
+          category,
+          accountId: a.id,
+          merchant: merchantTitle,
+          note: balanceAdjustmentNote?.trim() ? `${balanceAdjustmentNote.trim()} (${autoNote})` : autoNote,
+          date: new Date().toISOString().slice(0, 10),
+          createdAt: new Date().toISOString(),
+        };
+
+        txns.unshift(adjustmentTxn);
+        await setTransactions(txns, false);
+      }
+    } else if (a.balance > 0) {
+      // New account with initial non-zero balance
+      const txns = await getTransactions();
+      const adjustmentTxn: Transaction = {
+        id: id(),
+        amount: Math.abs(a.balance),
+        type: isDebt ? "expense" : "income",
+        category: isDebt ? "Loan / Debt" : "Balance Adjustment",
+        accountId: a.id,
+        merchant: isDebt ? `${a.name} Initial Debt 🏦` : `${a.name} Opening Balance ⚖️`,
+        note: balanceAdjustmentNote?.trim() || `Opening balance recorded for ${a.name}`,
+        date: new Date().toISOString().slice(0, 10),
+        createdAt: new Date().toISOString(),
+      };
+      txns.unshift(adjustmentTxn);
+      await setTransactions(txns, false);
+    }
+  }
+
   if (idx >= 0) list[idx] = accWithTimestamp;
   else list.push(accWithTimestamp);
   await setAccounts(list);

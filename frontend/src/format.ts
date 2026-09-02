@@ -1,5 +1,6 @@
 export function rm(n: number, opts?: { showSign?: boolean }) {
-  const sign = opts?.showSign && n > 0 ? "+" : "";
+  const isNegative = n < 0;
+  const sign = isNegative ? "-" : (opts?.showSign && n > 0 ? "+" : "");
   const parts = Math.abs(n).toFixed(2).split(".");
   const intWithCommas = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   return `${sign}RM ${intWithCommas}.${parts[1]}`;

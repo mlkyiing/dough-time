@@ -113,6 +113,12 @@ export const INCOME_CATEGORIES: {
 ];
 
 export function categoryMeta(key?: string | null) {
+  if (key === "Balance Adjustment") {
+    return { key: "Balance Adjustment" as any, emoji: "⚖️", icon: "scale-outline", tint: "#FEF3C7" };
+  }
+  if (key === "Transfer") {
+    return { key: "Transfer" as any, emoji: "🔁", icon: "swap-horizontal", tint: "#EEF2FF" };
+  }
   const inc = INCOME_CATEGORIES.find((c) => c.key === key);
   if (inc) return inc;
   return CATEGORIES.find((c) => c.key === (key as CategoryKey)) ?? CATEGORIES[CATEGORIES.length - 1];
