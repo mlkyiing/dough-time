@@ -96,7 +96,7 @@ export function analyzeAccountBudget(
   wage: WageSettings,
   selectedAccountIds?: string[],
   presetId: AllocationPreset = "balanced_50_30_20",
-  sourceMode: BudgetSourceMode = "liquid_balance"
+  sourceMode: BudgetSourceMode = "salary"
 ): AnalyzedBudgetPool {
   const liquidAssets = accounts.filter(
     (a) => isAssetAccount(a) && (a.type === "bank" || a.type === "ewallet" || a.type === "cash")
@@ -172,8 +172,8 @@ export function calculateBucketSpending(
   let comfortCount = 0;
 
   for (const t of transactions) {
-    // Only count expenses (exclude income records)
-    if (t.type === "income") continue;
+    // Only count actual expenses (exclude income records and account-to-account transfers)
+    if (t.type === "income" || t.type === "transfer") continue;
 
     if (t.date && t.date.startsWith(monthISO) && t.amount > 0) {
       totalSpent += t.amount;

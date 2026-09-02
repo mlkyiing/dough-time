@@ -106,7 +106,7 @@ export default function Insights() {
   );
 
   const expenseTxns = useMemo(
-    () => monthTxns.filter((t) => t.type !== "income"),
+    () => monthTxns.filter((t) => t.type !== "income" && t.type !== "transfer"),
     [monthTxns]
   );
 

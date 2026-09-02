@@ -44,7 +44,7 @@ export function SmartBudgetModal({
   );
 
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
-  const [sourceMode, setSourceMode] = useState<BudgetSourceMode>("liquid_balance");
+  const [sourceMode, setSourceMode] = useState<BudgetSourceMode>("salary");
   const [preset, setPreset] = useState<AllocationPreset>("balanced_50_30_20");
   const [needsLimit, setNeedsLimit] = useState("1300");
   const [comfortLimit, setComfortLimit] = useState("500");
@@ -59,7 +59,7 @@ export function SmartBudgetModal({
           : liquidAssetAccounts.map((a) => a.id);
       setSelectedAccountIds(defaultIds);
 
-      const mode = budget.budgetSourceMode || "liquid_balance";
+      const mode = budget.budgetSourceMode || "salary";
       setSourceMode(mode);
 
       const p = budget.allocationPreset || "balanced_50_30_20";
@@ -448,6 +448,38 @@ export function SmartBudgetModal({
                 </View>
               </View>
             </View>
+
+            {/* Category Budgets alignment card */}
+            {budget.categoryBudgets && budget.categoryBudgets.length > 0 && (
+              <View style={styles.catBudgetNoticeCard}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <Text style={styles.catBudgetNoticeTitle}>
+                      📁 Category Budgets: {rm(budget.categoryBudgets.reduce((s, c) => s + c.monthlyLimit, 0))} total
+                    </Text>
+                    <Text style={styles.catBudgetNoticeSub}>
+                      {budget.categoryBudgets.map((c) => `${c.category} (${rm(c.monthlyLimit)})`).join(" · ")}
+                    </Text>
+                  </View>
+                  {totalOverallBudget < budget.categoryBudgets.reduce((s, c) => s + c.monthlyLimit, 0) && (
+                    <Pressable
+                      style={styles.alignBtn}
+                      onPress={() => {
+                        const sum = budget.categoryBudgets!.reduce((s, c) => s + c.monthlyLimit, 0);
+                        const needsShare = Math.round(sum * 0.65);
+                        const comfortShare = sum - needsShare;
+                        setNeedsLimit(String(needsShare));
+                        setComfortLimit(String(comfortShare));
+                        setIsManualEdit(true);
+                        Haptics.selectionAsync().catch(() => {});
+                      }}
+                    >
+                      <Text style={styles.alignBtnText}>Align Ceiling ⚡</Text>
+                    </Pressable>
+                  )}
+                </View>
+              </View>
+            )}
           </ScrollView>
 
           {/* Footer Actions */}
@@ -813,5 +845,35 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "800",
     color: colors.onBrandPrimary,
+  },
+  catBudgetNoticeCard: {
+    backgroundColor: "#F0FDF4",
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  catBudgetNoticeTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#166534",
+  },
+  catBudgetNoticeSub: {
+    fontSize: 11,
+    color: "#15803D",
+    marginTop: 2,
+  },
+  alignBtn: {
+    backgroundColor: "#16A34A",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+  },
+  alignBtnText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "800",
   },
 });

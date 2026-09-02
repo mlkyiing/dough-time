@@ -186,7 +186,7 @@ export default function HomeDashboard() {
 
   const thisMonth = monthKey(todayISO());
   const monthSpending = transactions
-    .filter((t) => monthKey(t.date) === thisMonth && t.type !== "income" && t.amount > 0)
+    .filter((t) => monthKey(t.date) === thisMonth && t.type !== "income" && t.type !== "transfer" && t.amount > 0)
     .reduce((sum, t) => sum + t.amount, 0);
   const monthIncome = transactions
     .filter((t) => monthKey(t.date) === thisMonth && t.type === "income" && t.amount > 0)
