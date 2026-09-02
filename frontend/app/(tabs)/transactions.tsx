@@ -17,7 +17,7 @@ import * as Haptics from "expo-haptics";
 import { colors, radius, shadow, spacing } from "@/src/theme";
 import { deleteTransaction, getAccounts, getTransactions, getWageSettings, mergeWithCloud, updateTransaction } from "@/src/store";
 import { Account, Transaction, WageSettings } from "@/src/types";
-import { CATEGORIES, INCOME_CATEGORIES } from "@/src/constants";
+import { CATEGORIES, INCOME_CATEGORIES, categoryMeta } from "@/src/constants";
 import { amountToWorkHours, formatMonthDisplay, monthKey, rm, todayISO } from "@/src/format";
 import { SwipeableTxnRow } from "@/src/components/SwipeableTxnRow";
 import { TransactionDetailModal } from "@/src/components/TransactionDetailModal";
@@ -38,7 +38,7 @@ export default function Transactions() {
   });
   const [viewMode, setViewMode] = useState<"money" | "time">("money");
   const [selectedMonth, setSelectedMonth] = useState<string>(monthKey(todayISO()));
-  const [typeFilter, setTypeFilter] = useState<"all" | "expense" | "income">("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "expense" | "income" | "transfer">("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
   const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null);
 
@@ -97,8 +97,9 @@ export default function Transactions() {
         return false;
       }
       // 2. Type filter
-      if (typeFilter === "expense" && t.type === "income") return false;
+      if (typeFilter === "expense" && (t.type === "income" || t.type === "transfer")) return false;
       if (typeFilter === "income" && t.type !== "income") return false;
+      if (typeFilter === "transfer" && t.type !== "transfer") return false;
       // 3. Category filter
       if (categoryFilter !== "All" && t.category !== categoryFilter) return false;
       return true;
@@ -111,7 +112,7 @@ export default function Transactions() {
   );
 
   const monthExpensesCount = useMemo(
-    () => monthTxns.filter((t) => t.type !== "income").length,
+    () => monthTxns.filter((t) => t.type !== "income" && t.type !== "transfer").length,
     [monthTxns]
   );
 
@@ -120,12 +121,20 @@ export default function Transactions() {
     [monthTxns]
   );
 
+  const monthTransfersCount = useMemo(
+    () => monthTxns.filter((t) => t.type === "transfer").length,
+    [monthTxns]
+  );
+
   // Month stats for banner
   const monthStats = useMemo(() => {
-    const expenses = monthTxns.filter((t) => t.type !== "income").reduce((s, t) => s + t.amount, 0);
+    const expenses = monthTxns
+      .filter((t) => t.type !== "income" && t.type !== "transfer")
+      .reduce((s, t) => s + t.amount, 0);
     const income = monthTxns.filter((t) => t.type === "income").reduce((s, t) => s + t.amount, 0);
+    const transfers = monthTxns.filter((t) => t.type === "transfer").reduce((s, t) => s + t.amount, 0);
     const net = income - expenses;
-    return { expenses, income, net };
+    return { expenses, income, transfers, net };
   }, [monthTxns]);
 
   const totalExpenseHours = amountToWorkHours(monthStats.expenses, wage.hourlyRate);
@@ -277,7 +286,7 @@ export default function Transactions() {
         </Pressable>
       </View>
 
-      {/* Type Filter Segmented Control (All vs Expenses vs Income) */}
+      {/* Type Filter Segmented Control (All vs Expenses vs Income vs Transfers) */}
       <View style={styles.typeSegmentWrap}>
         <Pressable
           style={[styles.typeSegmentBtn, typeFilter === "all" && styles.typeSegmentBtnActive]}
@@ -315,6 +324,18 @@ export default function Transactions() {
             💰 Income ({monthIncomeCount})
           </Text>
         </Pressable>
+        <Pressable
+          style={[styles.typeSegmentBtn, typeFilter === "transfer" && styles.typeSegmentBtnActiveTransfer]}
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            setTypeFilter("transfer");
+            setCategoryFilter("All");
+          }}
+        >
+          <Text style={[styles.typeSegmentText, typeFilter === "transfer" && styles.typeSegmentTextActive]}>
+            🔁 Transfers ({monthTransfersCount})
+          </Text>
+        </Pressable>
       </View>
 
       {/* Category Filter Chips */}
@@ -325,11 +346,11 @@ export default function Transactions() {
           contentContainerStyle={{ gap: 8, paddingHorizontal: spacing.lg }}
         >
           {categoryChips.map((c) => {
-            const isActive = categoryFilter === c;
+            const isSel = categoryFilter === c;
+            const meta = categoryMeta(c);
             return (
               <Pressable
                 key={c}
-                testID={`filter-chip-${c}`}
                 onPress={() => {
                   Haptics.selectionAsync().catch(() => {});
                   setCategoryFilter(c);
@@ -337,15 +358,19 @@ export default function Transactions() {
                 style={[
                   styles.chip,
                   {
-                    backgroundColor: isActive ? colors.brandPrimary : colors.surfaceSecondary,
-                    borderColor: isActive ? colors.brandPrimary : colors.borderStrong,
+                    backgroundColor: isSel ? colors.brandPrimary : colors.surfaceSecondary,
+                    borderColor: isSel ? colors.brandPrimary : colors.border,
                   },
                 ]}
               >
+                {c !== "All" && <Text style={{ fontSize: 13 }}>{meta.emoji}</Text>}
                 <Text
                   style={[
                     styles.chipText,
-                    { color: isActive ? colors.onBrandPrimary : colors.onSurface },
+                    {
+                      color: isSel ? colors.onBrandPrimary : colors.onSurface,
+                      fontWeight: isSel ? "700" : "500",
+                    },
                   ]}
                 >
                   {c}
@@ -356,11 +381,11 @@ export default function Transactions() {
         </ScrollView>
       </View>
 
-      {/* Transactions List with Swipe to Delete & Tap for Details */}
+      {/* Transactions List */}
       <FlatList
         data={filtered}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: 130 }}
+        keyExtractor={(t) => t.id}
+        contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyBox}>
@@ -379,11 +404,13 @@ export default function Transactions() {
         }
         renderItem={({ item }) => {
           const acc = accounts.find((a) => a.id === item.accountId);
+          const toAcc = accounts.find((a) => a.id === item.toAccountId);
           return (
             <SwipeableTxnRow
               key={item.id}
               transaction={item}
               account={acc}
+              toAccount={toAcc}
               hourlyRate={wage.hourlyRate}
               viewMode={viewMode}
               onPress={(t) => setSelectedTxn(t)}
@@ -521,6 +548,10 @@ const styles = StyleSheet.create({
   },
   typeSegmentBtnActiveIncome: {
     backgroundColor: "#10B981",
+    ...shadow.soft,
+  },
+  typeSegmentBtnActiveTransfer: {
+    backgroundColor: "#6366F1",
     ...shadow.soft,
   },
   typeSegmentText: {

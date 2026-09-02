@@ -21,15 +21,20 @@ export type Account = {
   monthlyInstallment?: number; // e.g. RM 650
   reminderEnabled?: boolean;
   reminderDaysBefore?: number; // 1, 2, 3, or 5 days before due date
+  loanTenureMonths?: number; // e.g. 60 (5 yrs) or 84 (7 yrs)
+  loanPrincipal?: number; // Original loan amount
+  loanType?: "car" | "mortgage" | "personal" | "study";
+  updatedAt?: string;
 };
 
 export type Transaction = {
   id: string;
   amount: number; // positive number
-  type?: "expense" | "income"; // default "expense"
+  type?: "expense" | "income" | "transfer"; // default "expense"
   bucket?: BudgetBucket; // "needs" | "comfort" | "savings"
   category: string;
-  accountId: string;
+  accountId: string; // Source account (or from account)
+  toAccountId?: string; // Destination account for transfers
   note?: string;
   merchant?: string;
   date: string; // ISO

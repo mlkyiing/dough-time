@@ -17,6 +17,7 @@ import { Account, Transaction } from "@/src/types";
 interface Props {
   transaction: Transaction;
   account?: Account;
+  toAccount?: Account;
   hourlyRate: number;
   viewMode: "money" | "time";
   onPress?: (transaction: Transaction) => void;
@@ -26,6 +27,7 @@ interface Props {
 export function SwipeableTxnRow({
   transaction: t,
   account: acc,
+  toAccount: toAcc,
   hourlyRate,
   viewMode,
   onPress,
@@ -91,6 +93,18 @@ export function SwipeableTxnRow({
   };
 
   const isIncome = t.type === "income";
+  const isTransfer = t.type === "transfer";
+  const isLoanRepay = isTransfer && (toAcc?.type === "loan" || t.category === "Loan / Debt");
+
+  const displayTitle = isTransfer
+    ? isLoanRepay
+      ? `Loan Repayment 💸`
+      : `Transfer: ${acc?.name || "Account"} ➔ ${toAcc?.name || t.merchant || "Account"}`
+    : t.merchant || t.category;
+
+  const displaySubtitle = isTransfer
+    ? `${shortDate(t.date)} · ${acc?.name || "Source"} ➔ ${toAcc?.name || t.merchant || "Destination"}${t.note ? ` · ${t.note}` : ""}`
+    : `${shortDate(t.date)} · ${acc?.name || "Cash"}${t.note ? ` · ${t.note}` : ""}`;
 
   return (
     <View style={styles.container}>
@@ -111,6 +125,7 @@ export function SwipeableTxnRow({
         style={[
           styles.card,
           isIncome && styles.cardIncome,
+          isTransfer && styles.cardTransfer,
           {
             transform: [{ translateX: pan }],
           },
@@ -129,30 +144,54 @@ export function SwipeableTxnRow({
           }}
           onLongPress={() => onDelete(t.id)}
         >
-          <View style={[styles.iconBox, { backgroundColor: meta.tint }]}>
-            <Text style={{ fontSize: 22 }}>{meta.emoji}</Text>
+          <View
+            style={[
+              styles.iconBox,
+              { backgroundColor: isTransfer ? "#EEF2FF" : meta.tint },
+            ]}
+          >
+            <Text style={{ fontSize: 22 }}>
+              {isTransfer ? (isLoanRepay ? "🚘" : "🔁") : meta.emoji}
+            </Text>
           </View>
 
           <View style={{ flex: 1, justifyContent: "center" }}>
             <Text style={styles.cardTitle} numberOfLines={1}>
-              {t.merchant || t.category}
+              {displayTitle}
             </Text>
             <Text style={styles.cardSub} numberOfLines={1}>
-              {shortDate(t.date)} · {acc?.name || "Cash"}
-              {t.note ? ` · ${t.note}` : ""}
+              {displaySubtitle}
             </Text>
           </View>
 
           <View style={{ alignItems: "flex-end", justifyContent: "center" }}>
-            <Text style={[styles.cardAmt, isIncome && styles.cardAmtIncome]}>
+            <Text
+              style={[
+                styles.cardAmt,
+                isIncome && styles.cardAmtIncome,
+                isTransfer && styles.cardAmtTransfer,
+              ]}
+            >
               {viewMode === "money"
-                ? `${isIncome ? "+" : ""}${rm(t.amount)}`
-                : `${isIncome ? "+" : ""}${timeCost}`}
+                ? `${isIncome ? "+" : isTransfer ? "⇄ " : ""}${rm(t.amount)}`
+                : `${isIncome ? "+" : isTransfer ? "⇄ " : ""}${timeCost}`}
             </Text>
-            <View style={[styles.timePill, isIncome && styles.timePillIncome]}>
-              <Text style={[styles.timePillText, isIncome && styles.timePillTextIncome]}>
+            <View
+              style={[
+                styles.timePill,
+                isIncome && styles.timePillIncome,
+                isTransfer && styles.timePillTransfer,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.timePillText,
+                  isIncome && styles.timePillTextIncome,
+                  isTransfer && styles.timePillTextTransfer,
+                ]}
+              >
                 {viewMode === "money"
-                  ? `${isIncome ? "🌿 +" : "⏱️ "}${timeCost}`
+                  ? `${isIncome ? "🌿 +" : isTransfer ? "🔁 " : "⏱️ "}${timeCost}`
                   : `${isIncome ? "+" : ""}${rm(t.amount)}`}
               </Text>
             </View>
@@ -255,6 +294,20 @@ const styles = StyleSheet.create({
   },
   timePillTextIncome: {
     color: "#047857",
+    fontWeight: "700",
+  },
+  cardTransfer: {
+    borderColor: "#C7D2FE",
+  },
+  cardAmtTransfer: {
+    color: colors.brandPrimary,
+    fontWeight: "800",
+  },
+  timePillTransfer: {
+    backgroundColor: "#EEF2FF",
+  },
+  timePillTextTransfer: {
+    color: colors.brandPrimary,
     fontWeight: "700",
   },
 });

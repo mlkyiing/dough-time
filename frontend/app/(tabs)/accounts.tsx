@@ -39,6 +39,9 @@ import { EditAccountModal } from "@/src/components/EditAccountModal";
 import { AnimatedMascot } from "@/src/components/AnimatedMascot";
 import { CloudSyncModal } from "@/src/components/CloudSyncModal";
 import { CuteAppBackground } from "@/src/components/CuteAppBackground";
+import { TransferModal } from "@/src/components/TransferModal";
+import { LoanDueBanner } from "@/src/components/LoanDueBanner";
+import { getDueLoanReminders, DueLoanInfo } from "@/src/utils/notifications";
 
 export default function Accounts() {
   const insets = useSafeAreaInsets();
@@ -61,6 +64,13 @@ export default function Accounts() {
   const [syncSession, setSyncSession] = useState<SyncSession | null>(null);
   const [tempSalary, setTempSalary] = useState("4500");
   const [tempHours, setTempHours] = useState("40");
+
+  // Transfer & Repayment Modal state
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [transferFromId, setTransferFromId] = useState<string | undefined>();
+  const [transferToId, setTransferToId] = useState<string | undefined>();
+  const [transferPrefillAmount, setTransferPrefillAmount] = useState<number | undefined>();
+  const [dismissedReminders, setDismissedReminders] = useState<string[]>([]);
 
   // Custom account form fields
   const [customName, setCustomName] = useState("");
@@ -202,6 +212,12 @@ export default function Accounts() {
     [pickerCategory]
   );
 
+  const dueReminders = useMemo(() => {
+    return getDueLoanReminders(accounts, wage.hourlyRate).filter(
+      (r) => !dismissedReminders.includes(r.account.id)
+    );
+  }, [accounts, wage.hourlyRate, dismissedReminders]);
+
   return (
     <SafeAreaView
       style={[
@@ -219,22 +235,51 @@ export default function Accounts() {
             Net Worth {rm(netWorth)} ({netWorthHours >= 0 ? `+${netWorthHours.toFixed(1)}h work saved` : `${netWorthHours.toFixed(1)}h work`})
           </Text>
         </View>
-        <Pressable
-          testID="add-account-btn"
-          style={({ pressed }) => [styles.iconBtn, pressed && { transform: [{ scale: 0.95 }] }]}
-          onPress={() => {
-            Haptics.selectionAsync().catch(() => {});
-            setPickerOpen(true);
-          }}
-        >
-          <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
-        </Pressable>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Pressable
+            testID="transfer-btn"
+            style={({ pressed }) => [styles.transferBtn, pressed && { transform: [{ scale: 0.95 }] }]}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              setTransferFromId(undefined);
+              setTransferToId(undefined);
+              setTransferPrefillAmount(undefined);
+              setTransferModalOpen(true);
+            }}
+          >
+            <Ionicons name="swap-horizontal" size={16} color="#FFFFFF" />
+            <Text style={styles.transferBtnText}>Transfer</Text>
+          </Pressable>
+          <Pressable
+            testID="add-account-btn"
+            style={({ pressed }) => [styles.iconBtn, pressed && { transform: [{ scale: 0.95 }] }]}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              setPickerOpen(true);
+            }}
+          >
+            <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: 130 }}
         showsVerticalScrollIndicator={false}
       >
+        {/* In-App Due Loan Reminder Banner */}
+        <LoanDueBanner
+          reminders={dueReminders}
+          onPayPress={(info) => {
+            setTransferToId(info.account.id);
+            setTransferPrefillAmount(info.installment);
+            setTransferModalOpen(true);
+          }}
+          onDismiss={(id) => {
+            setDismissedReminders((prev) => [...prev, id]);
+          }}
+        />
+
         {/* Net Worth Summary Card (Assets vs Liabilities) */}
         <View style={styles.netWorthCard}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: spacing.md }}>
@@ -407,13 +452,50 @@ export default function Accounts() {
                     <Text style={styles.limitTag}>Limit {rm(a.creditLimit)}</Text>
                   )}
                   {isDebt && a.dueDay && (
-                    <View style={styles.dueBadge}>
+                    <Pressable
+                      style={styles.dueBadge}
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        Haptics.selectionAsync().catch(() => {});
+                        setReminderAccount(a);
+                      }}
+                    >
                       <Text style={styles.dueBadgeText}>
                         🔔 {a.dueDay}th {a.monthlyInstallment ? `(${rm(a.monthlyInstallment)}/mo)` : ""}
                       </Text>
-                    </View>
+                    </Pressable>
                   )}
                 </View>
+
+                {/* Quick Repayment & Calculation Actions for Loans & Debt */}
+                {isDebt && (
+                  <View style={styles.debtActionsRow}>
+                    <Pressable
+                      style={styles.repayPillBtn}
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        Haptics.selectionAsync().catch(() => {});
+                        setTransferToId(a.id);
+                        setTransferPrefillAmount(a.monthlyInstallment || a.balance);
+                        setTransferModalOpen(true);
+                      }}
+                    >
+                      <Ionicons name="swap-horizontal" size={12} color="#FFFFFF" />
+                      <Text style={styles.repayPillBtnText}>Deduct Repayment</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.calcPillBtn}
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        Haptics.selectionAsync().catch(() => {});
+                        setReminderAccount(a);
+                      }}
+                    >
+                      <Ionicons name="calculator-outline" size={12} color={colors.brandPrimary} />
+                      <Text style={styles.calcPillBtnText}>Calculator / Remind</Text>
+                    </Pressable>
+                  </View>
+                )}
               </View>
 
               <View style={{ alignItems: "flex-end", gap: 1 }}>
@@ -466,6 +548,23 @@ export default function Accounts() {
           await upsertAccount(updated);
           load();
         }}
+        onOpenTransfer={(acc) => {
+          setTransferToId(acc.id);
+          setTransferPrefillAmount(acc.monthlyInstallment || acc.balance);
+          setTransferModalOpen(true);
+        }}
+      />
+
+      {/* Transfer & Repayment Modal */}
+      <TransferModal
+        visible={transferModalOpen}
+        accounts={accounts}
+        wage={wage}
+        preselectedFromId={transferFromId}
+        preselectedToId={transferToId}
+        prefillAmount={transferPrefillAmount}
+        onClose={() => setTransferModalOpen(false)}
+        onSuccess={() => load()}
       />
 
       {/* Account Picker Modal with Tabs */}
@@ -714,6 +813,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 2,
   },
+  transferBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: colors.brandPrimary,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    ...shadow.glow,
+  },
+  transferBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "800",
+  },
   iconBtn: {
     backgroundColor: colors.brandPrimary,
     width: 38,
@@ -722,6 +836,40 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     ...shadow.glow,
+  },
+  debtActionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 6,
+  },
+  repayPillBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#DC2626",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+  },
+  repayPillBtnText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  calcPillBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: colors.surfaceTertiary,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+  },
+  calcPillBtnText: {
+    color: colors.brandPrimary,
+    fontSize: 10,
+    fontWeight: "700",
   },
   netWorthCard: {
     backgroundColor: colors.surfaceSecondary,

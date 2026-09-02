@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Alert,
   Modal,
@@ -16,7 +16,8 @@ import { colors, radius, shadow, spacing } from "@/src/theme";
 import { Account, WageSettings } from "@/src/types";
 import { amountToWorkHours, rm } from "@/src/format";
 import { AnimatedMascot } from "./AnimatedMascot";
-import { scheduleLoanRepaymentReminder, triggerNotification } from "../utils/notifications";
+import { scheduleLoanRepaymentReminder, triggerNotification, checkAndRequestNotificationPermission } from "../utils/notifications";
+import { calculateLoanRepayment, LoanCalculationType } from "../utils/loanCalculator";
 
 interface Props {
   visible: boolean;
@@ -24,6 +25,7 @@ interface Props {
   wage: WageSettings;
   onClose: () => void;
   onSave: (updated: Account) => void;
+  onOpenTransfer?: (account: Account) => void;
 }
 
 export function LoanReminderModal({
@@ -32,6 +34,7 @@ export function LoanReminderModal({
   wage,
   onClose,
   onSave,
+  onOpenTransfer,
 }: Props) {
   if (!account) return null;
 
@@ -40,17 +43,54 @@ export function LoanReminderModal({
   const [reminderEnabled, setReminderEnabled] = useState(true);
   const [daysBefore, setDaysBefore] = useState("2");
 
+  // Loan Repayment Deduction Calculator States
+  const [showCalculator, setShowCalculator] = useState(false);
+  const [calcPrincipal, setCalcPrincipal] = useState("");
+  const [calcRate, setCalcRate] = useState("3.2");
+  const [calcYears, setCalcYears] = useState("5");
+  const [calcType, setCalcType] = useState<LoanCalculationType>("flat");
+  const [testingNotification, setTestingNotification] = useState(false);
+
   useEffect(() => {
     if (account) {
       setInstallment(account.monthlyInstallment ? String(account.monthlyInstallment) : String(account.balance || ""));
       setDueDay(account.dueDay ? String(account.dueDay) : "25");
       setReminderEnabled(account.reminderEnabled ?? true);
       setDaysBefore(account.reminderDaysBefore ? String(account.reminderDaysBefore) : "2");
+
+      setCalcPrincipal(account.loanPrincipal ? String(account.loanPrincipal) : String(account.balance || "18500"));
+      setCalcRate(account.interestRate ? String(account.interestRate) : "3.2");
+      const defaultMonths = account.loanTenureMonths || 60;
+      setCalcYears(String(Math.round(defaultMonths / 12) || 5));
+      setCalcType(account.type === "loan" && account.name.toLowerCase().includes("house") ? "reducing" : "flat");
     }
   }, [account]);
 
   const installmentNum = parseFloat(installment) || 0;
   const workHours = amountToWorkHours(installmentNum, wage.hourlyRate);
+
+  // Real-time calculation results
+  const principalNum = parseFloat(calcPrincipal.replace(/,/g, "")) || 0;
+  const rateNum = parseFloat(calcRate.replace(/,/g, "")) || 0;
+  const yearsNum = parseFloat(calcYears) || 5;
+  const tenureMonths = Math.max(1, Math.round(yearsNum * 12));
+
+  const calcResult = useMemo(() => {
+    return calculateLoanRepayment({
+      principal: principalNum,
+      interestRate: rateNum,
+      tenureMonths,
+      type: calcType,
+      hourlyRate: wage.hourlyRate,
+      currentBalance: account?.balance,
+    });
+  }, [principalNum, rateNum, tenureMonths, calcType, wage.hourlyRate, account?.balance]);
+
+  const handleApplyCalculated = () => {
+    Haptics.selectionAsync().catch(() => {});
+    setInstallment(String(calcResult.monthlyInstallment));
+    setShowCalculator(false);
+  };
 
   const handleSave = async () => {
     const dayNum = parseInt(dueDay, 10);
@@ -65,6 +105,9 @@ export function LoanReminderModal({
       dueDay: dayNum,
       reminderEnabled,
       reminderDaysBefore: parseInt(daysBefore, 10) || 2,
+      interestRate: rateNum > 0 ? rateNum : account.interestRate,
+      loanPrincipal: principalNum > 0 ? principalNum : account.loanPrincipal,
+      loanTenureMonths: tenureMonths > 0 ? tenureMonths : account.loanTenureMonths,
     };
 
     onSave(updated);
@@ -77,10 +120,30 @@ export function LoanReminderModal({
 
   const handleTestNotification = async () => {
     Haptics.selectionAsync().catch(() => {});
-    await triggerNotification(
-      `🚗 ${account.name} Reminder`,
-      `Your installment of ${rm(installmentNum || 650)} (${workHours.toFixed(1)}h of work) is due on the ${dueDay || 25}th. Keep your Dough safe! 🥟✨`
-    );
+    setTestingNotification(true);
+
+    try {
+      const res = await triggerNotification(
+        `🚗 ${account.name} Reminder`,
+        `Your installment of ${rm(installmentNum || 650)} (${workHours.toFixed(1)}h of work) is due on the ${dueDay || 25}th. Keep your Dough safe! 🥟✨`
+      );
+
+      if (res.success) {
+        Alert.alert(
+          "Notification Test Sent! 🔔",
+          `${res.message}\n\nA test reminder was pushed to your device. Look out for the Dough banner!`
+        );
+      } else {
+        Alert.alert(
+          "Notification Notice",
+          `${res.message}\n\nDon't worry! DoughTime will also show in-app reminders right on your dashboard whenever this payment is due.`
+        );
+      }
+    } catch (e: any) {
+      Alert.alert("Test Error", e.message || "Failed to trigger test notification.");
+    } finally {
+      setTestingNotification(false);
+    }
   };
 
   return (
@@ -94,7 +157,7 @@ export function LoanReminderModal({
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
               <AnimatedMascot variant="zen" size={44} interactive={true} />
               <View>
-                <Text style={styles.title}>Repayment Reminder 🔔</Text>
+                <Text style={styles.title}>Loan & Repayment Reminder 🔔</Text>
                 <Text style={styles.sub}>{account.name}</Text>
               </View>
             </View>
@@ -108,7 +171,7 @@ export function LoanReminderModal({
             <View style={styles.switchRow}>
               <View style={{ flex: 1, gap: 2 }}>
                 <Text style={styles.switchLabel}>Monthly Payment Reminder</Text>
-                <Text style={styles.switchSub}>Receive phone/web notifications before due date</Text>
+                <Text style={styles.switchSub}>Receive notifications & in-app alerts before due date</Text>
               </View>
               <Switch
                 value={reminderEnabled}
@@ -120,6 +183,164 @@ export function LoanReminderModal({
                 thumbColor="#FFFFFF"
               />
             </View>
+
+            {/* LOAN REPAYMENT DEDUCTION CALCULATOR ACCORDION */}
+            <Pressable
+              style={styles.calcToggleCard}
+              onPress={() => {
+                Haptics.selectionAsync().catch(() => {});
+                setShowCalculator(!showCalculator);
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
+                <Text style={{ fontSize: 20 }}>🧮</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.calcToggleTitle}>Loan Repayment Deduction Calculator</Text>
+                  <Text style={styles.calcToggleSub}>
+                    Calculate monthly installment, interest deduction & work time
+                  </Text>
+                </View>
+              </View>
+              <Ionicons
+                name={showCalculator ? "chevron-up" : "chevron-down"}
+                size={18}
+                color={colors.brandPrimary}
+              />
+            </Pressable>
+
+            {showCalculator && (
+              <View style={styles.calculatorBox}>
+                <Text style={styles.calcSectionHeading}>Loan Deduction Parameters</Text>
+
+                {/* Loan Calculation Type */}
+                <View style={styles.calcTypeRow}>
+                  <Pressable
+                    style={[styles.calcTypeBtn, calcType === "flat" && styles.calcTypeBtnActive]}
+                    onPress={() => setCalcType("flat")}
+                  >
+                    <Text style={[styles.calcTypeBtnText, calcType === "flat" && styles.calcTypeBtnTextActive]}>
+                      🚗 Flat Rate (Car / Fixed)
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.calcTypeBtn, calcType === "reducing" && styles.calcTypeBtnActive]}
+                    onPress={() => setCalcType("reducing")}
+                  >
+                    <Text style={[styles.calcTypeBtnText, calcType === "reducing" && styles.calcTypeBtnTextActive]}>
+                      🏡 Reducing (Mortgage / Bank)
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {/* Principal Loan Amount */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Loan Principal / Financing Amount (RM)</Text>
+                  <TextInput
+                    value={calcPrincipal}
+                    onChangeText={setCalcPrincipal}
+                    keyboardType="numeric"
+                    placeholder="e.g. 50000"
+                    placeholderTextColor={colors.onSurfaceSecondary}
+                    style={styles.input}
+                  />
+                </View>
+
+                {/* Interest Rate & Tenure Row */}
+                <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>Interest Rate % p.a.</Text>
+                    <TextInput
+                      value={calcRate}
+                      onChangeText={setCalcRate}
+                      keyboardType="decimal-pad"
+                      placeholder="e.g. 3.2"
+                      placeholderTextColor={colors.onSurfaceSecondary}
+                      style={styles.input}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>Tenure (Years)</Text>
+                    <TextInput
+                      value={calcYears}
+                      onChangeText={setCalcYears}
+                      keyboardType="numeric"
+                      placeholder="e.g. 5"
+                      placeholderTextColor={colors.onSurfaceSecondary}
+                      style={styles.input}
+                    />
+                  </View>
+                </View>
+
+                {/* Quick Tenure Pills */}
+                <View style={styles.tenurePillsRow}>
+                  {["3", "5", "7", "9"].map((yr) => (
+                    <Pressable
+                      key={yr}
+                      style={[styles.tenurePill, calcYears === yr && styles.tenurePillActive]}
+                      onPress={() => {
+                        Haptics.selectionAsync().catch(() => {});
+                        setCalcYears(yr);
+                      }}
+                    >
+                      <Text style={[styles.tenurePillText, calcYears === yr && styles.tenurePillTextActive]}>
+                        {yr} yrs ({parseInt(yr, 10) * 12}m)
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                {/* Calculation Breakdown Results Card */}
+                <View style={styles.calcResultsCard}>
+                  <View style={styles.calcResultHeader}>
+                    <Text style={styles.calcResultTitle}>Monthly Repayment Deduction</Text>
+                    <Text style={styles.calcMonthlyAmount}>{rm(calcResult.monthlyInstallment)}/mo</Text>
+                  </View>
+
+                  <View style={styles.breakdownRow}>
+                    <View style={styles.breakdownCol}>
+                      <Text style={styles.breakdownLabel}>Principal Deduction</Text>
+                      <Text style={styles.breakdownVal}>{rm(calcResult.monthlyPrincipal)}</Text>
+                    </View>
+                    <View style={styles.breakdownDivider} />
+                    <View style={styles.breakdownCol}>
+                      <Text style={styles.breakdownLabel}>Interest Deduction</Text>
+                      <Text style={[styles.breakdownVal, { color: "#EF4444" }]}>
+                        {rm(calcResult.monthlyInterest)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.detailStatsRow}>
+                    <Text style={styles.detailStatText}>
+                      Total Interest: <Text style={{ fontWeight: "700" }}>{rm(calcResult.totalInterest)}</Text>
+                    </Text>
+                    <Text style={styles.detailStatText}>
+                      Total Payable: <Text style={{ fontWeight: "700" }}>{rm(calcResult.totalPayable)}</Text>
+                    </Text>
+                  </View>
+
+                  <View style={styles.lifeCostPill}>
+                    <Text style={{ fontSize: 13 }}>⏱️</Text>
+                    <Text style={styles.lifeCostText}>
+                      Deducts <Text style={{ fontWeight: "800", color: colors.brandPrimary }}>{calcResult.workHoursPerMonth} hours</Text> of your work each month
+                    </Text>
+                  </View>
+
+                  {calcResult.estimatedMonthsRemaining && (
+                    <Text style={styles.monthsRemainingText}>
+                      🏁 At this rate, debt of {rm(account.balance)} will be cleared in ~{calcResult.estimatedMonthsRemaining} months!
+                    </Text>
+                  )}
+
+                  <Pressable style={styles.applyCalcBtn} onPress={handleApplyCalculated}>
+                    <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
+                    <Text style={styles.applyCalcBtnText}>
+                      Apply {rm(calcResult.monthlyInstallment)} as Monthly Installment
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
 
             {reminderEnabled && (
               <>
@@ -180,17 +401,40 @@ export function LoanReminderModal({
                 </View>
 
                 {/* Test Notification Action */}
-                <Pressable style={styles.testBtn} onPress={handleTestNotification}>
-                  <Ionicons name="notifications-outline" size={16} color={colors.brandPrimary} />
-                  <Text style={styles.testBtnText}>Test Live Notification</Text>
+                <Pressable
+                  style={[styles.testBtn, testingNotification && { opacity: 0.6 }]}
+                  disabled={testingNotification}
+                  onPress={handleTestNotification}
+                >
+                  <Ionicons name="notifications" size={16} color={colors.brandPrimary} />
+                  <Text style={styles.testBtnText}>
+                    {testingNotification ? "Sending Test Alert…" : "Test Live Notification 🔔"}
+                  </Text>
                 </Pressable>
               </>
+            )}
+
+            {/* Quick Action: Deduct Repayment from Bank Now */}
+            {onOpenTransfer && (
+              <Pressable
+                style={styles.deductNowBtn}
+                onPress={() => {
+                  Haptics.selectionAsync().catch(() => {});
+                  onClose();
+                  onOpenTransfer(account);
+                }}
+              >
+                <Ionicons name="swap-horizontal" size={16} color={colors.brandPrimary} />
+                <Text style={styles.deductNowBtnText}>
+                  Deduct Repayment Now from Bank Account 💸
+                </Text>
+              </Pressable>
             )}
           </ScrollView>
 
           {/* Save Button */}
           <Pressable style={styles.saveBtn} onPress={handleSave}>
-            <Text style={styles.saveBtnText}>Save Repayment Reminder</Text>
+            <Text style={styles.saveBtnText}>Save Repayment Settings</Text>
           </Pressable>
         </View>
       </View>
@@ -210,7 +454,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radius.lg,
     padding: spacing.xl,
     paddingBottom: 36,
-    maxHeight: "88%",
+    maxHeight: "92%",
     ...shadow.card,
   },
   handleBar: {
@@ -228,7 +472,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontWeight: "800",
-    fontSize: 18,
+    fontSize: 17,
     color: colors.onSurface,
     letterSpacing: -0.3,
   },
@@ -267,6 +511,178 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.onSurfaceSecondary,
     marginTop: 2,
+  },
+  calcToggleCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.surfaceTertiary,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginVertical: spacing.sm,
+  },
+  calcToggleTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: colors.onSurface,
+  },
+  calcToggleSub: {
+    fontSize: 10.5,
+    color: colors.onSurfaceSecondary,
+    fontWeight: "500",
+    marginTop: 1,
+  },
+  calculatorBox: {
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    marginVertical: spacing.sm,
+  },
+  calcSectionHeading: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: colors.onSurfaceSecondary,
+    textTransform: "uppercase",
+    marginBottom: 8,
+  },
+  calcTypeRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: spacing.sm,
+  },
+  calcTypeBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  calcTypeBtnActive: {
+    backgroundColor: colors.brandPrimary,
+    borderColor: colors.brandPrimary,
+  },
+  calcTypeBtnText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.onSurfaceSecondary,
+  },
+  calcTypeBtnTextActive: {
+    color: "#FFFFFF",
+  },
+  tenurePillsRow: {
+    flexDirection: "row",
+    gap: 6,
+    marginTop: 8,
+  },
+  tenurePill: {
+    flex: 1,
+    paddingVertical: 6,
+    alignItems: "center",
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tenurePillActive: {
+    backgroundColor: colors.brandPrimary,
+    borderColor: colors.brandPrimary,
+  },
+  tenurePillText: {
+    fontSize: 10.5,
+    fontWeight: "700",
+    color: colors.onSurfaceSecondary,
+  },
+  tenurePillTextActive: {
+    color: "#FFFFFF",
+  },
+  calcResultsCard: {
+    backgroundColor: colors.surfaceSecondary,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  calcResultHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  calcResultTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.onSurface,
+  },
+  calcMonthlyAmount: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: colors.brandPrimary,
+  },
+  breakdownRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    padding: 8,
+    marginVertical: 6,
+  },
+  breakdownCol: {
+    flex: 1,
+    alignItems: "center",
+  },
+  breakdownDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: colors.border,
+  },
+  breakdownLabel: {
+    fontSize: 10,
+    color: colors.onSurfaceSecondary,
+    fontWeight: "600",
+  },
+  breakdownVal: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: colors.onSurface,
+    marginTop: 2,
+  },
+  detailStatsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginVertical: 4,
+  },
+  detailStatText: {
+    fontSize: 11,
+    color: colors.onSurfaceSecondary,
+  },
+  monthsRemainingText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.brandPrimary,
+    marginTop: 6,
+  },
+  applyCalcBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: colors.brandPrimary,
+    paddingVertical: 10,
+    borderRadius: radius.pill,
+    marginTop: 10,
+  },
+  applyCalcBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "800",
   },
   inputGroup: {
     marginTop: spacing.md,
@@ -341,6 +757,23 @@ const styles = StyleSheet.create({
   },
   testBtnText: {
     fontWeight: "700",
+    fontSize: 12,
+    color: colors.brandPrimary,
+  },
+  deductNowBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    paddingVertical: 10,
+    borderRadius: radius.pill,
+    marginTop: spacing.sm,
+  },
+  deductNowBtnText: {
+    fontWeight: "800",
     fontSize: 12,
     color: colors.brandPrimary,
   },

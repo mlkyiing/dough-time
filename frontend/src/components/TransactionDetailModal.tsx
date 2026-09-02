@@ -48,7 +48,7 @@ export function TransactionDetailModal({
   if (!t) return null;
 
   const [isEditing, setIsEditing] = useState(false);
-  const [editType, setEditType] = useState<"expense" | "income">("expense");
+  const [editType, setEditType] = useState<"expense" | "income" | "transfer">("expense");
   const [editMerchant, setEditMerchant] = useState("");
   const [editAmount, setEditAmount] = useState("");
   const [editCategory, setEditCategory] = useState("Makan");
@@ -72,11 +72,14 @@ export function TransactionDetailModal({
   }, [t, accounts]);
 
   const isIncome = (t.type === "income");
+  const isTransfer = (t.type === "transfer");
   const meta = categoryMeta(t.category);
   const timeCost = formatTimeCost(t.amount, hourlyRate);
   const workHours = amountToWorkHours(t.amount, hourlyRate);
   const reaction = getBobaReaction(workHours);
   const currentAccount = accounts.find((a) => a.id === (isEditing ? editAccountId : t.accountId)) || acc;
+  const toAccount = accounts.find((a) => a.id === t.toAccountId);
+  const isLoanRepay = isTransfer && (toAccount?.type === "loan" || t.category === "Loan / Debt");
 
   const handleDelete = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
@@ -417,13 +420,28 @@ export function TransactionDetailModal({
               <View style={styles.detailsList}>
                 <View style={styles.detailItem}>
                   <Text style={styles.detailLabel}>
-                    {isIncome ? "Deposited To" : "Payment Account"}
+                    {isIncome ? "Deposited To" : isTransfer ? "From Account" : "Payment Account"}
                   </Text>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                     <Text style={{ fontSize: 16 }}>{currentAccount?.emoji || "💳"}</Text>
                     <Text style={styles.detailValue}>{currentAccount?.name || "Cash Wallet"}</Text>
                   </View>
                 </View>
+
+                {isTransfer && toAccount && (
+                  <>
+                    <View style={styles.divider} />
+                    <View style={styles.detailItem}>
+                      <Text style={styles.detailLabel}>
+                        {isLoanRepay ? "Loan Debt Account" : "To Account"}
+                      </Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <Text style={{ fontSize: 16 }}>{toAccount.emoji}</Text>
+                        <Text style={styles.detailValue}>{toAccount.name}</Text>
+                      </View>
+                    </View>
+                  </>
+                )}
 
                 {t.bucket && (
                   <>

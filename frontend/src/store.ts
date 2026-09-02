@@ -472,6 +472,48 @@ function adjustAccountForTransaction(
   acc.balance = +(acc.balance + delta).toFixed(2);
 }
 
+function applyTransactionToAccounts(
+  accs: Account[],
+  txn: Pick<Transaction, "amount" | "type" | "accountId" | "toAccountId">,
+  reverse = false
+) {
+  const { amount, type, accountId, toAccountId } = txn;
+  if (!amount || amount <= 0) return;
+
+  if (type === "transfer" && toAccountId) {
+    const fromIdx = accs.findIndex((a) => a.id === accountId);
+    const toIdx = accs.findIndex((a) => a.id === toAccountId);
+
+    // Outflow from source account
+    if (fromIdx >= 0) {
+      const fromAcc = accs[fromIdx];
+      const isFromLiability = isLiabilityAccount(fromAcc.type);
+      // Transfer out: if asset, decreases balance; if liability, increases debt
+      let delta = isFromLiability ? amount : -amount;
+      if (reverse) delta = -delta;
+      fromAcc.balance = +(fromAcc.balance + delta).toFixed(2);
+    }
+
+    // Inflow to destination account
+    if (toIdx >= 0) {
+      const toAcc = accs[toIdx];
+      const isToLiability = isLiabilityAccount(toAcc.type);
+      // Transfer in: if asset, increases balance; if liability (loan/card repayment), reduces debt!
+      let delta = isToLiability ? -amount : amount;
+      if (reverse) delta = -delta;
+      toAcc.balance = +(toAcc.balance + delta).toFixed(2);
+    }
+    return;
+  }
+
+  // Regular Expense or Income
+  const isIncome = type === "income";
+  const idx = accs.findIndex((a) => a.id === accountId);
+  if (idx >= 0) {
+    adjustAccountForTransaction(accs[idx], amount, isIncome, reverse);
+  }
+}
+
 export async function addTransaction(t: Omit<Transaction, "id" | "createdAt">) {
   const list = await getTransactions();
   const tx: Transaction = {
@@ -482,16 +524,41 @@ export async function addTransaction(t: Omit<Transaction, "id" | "createdAt">) {
   list.unshift(tx);
   await setTransactions(list, false);
 
-  // update account balance
+  // update account balances
   const accs = await getAccounts();
-  const idx = accs.findIndex((a) => a.id === t.accountId);
-  if (idx >= 0) {
-    adjustAccountForTransaction(accs[idx], t.amount, t.type === "income", false);
-    await setAccounts(accs, false);
-  }
+  applyTransactionToAccounts(accs, tx, false);
+  await setAccounts(accs, false);
 
   await touchModified();
   return tx;
+}
+
+export async function transferFunds(params: {
+  fromAccountId: string;
+  toAccountId: string;
+  amount: number;
+  note?: string;
+  category?: string;
+  date?: string;
+}): Promise<Transaction> {
+  const { fromAccountId, toAccountId, amount, note, category, date } = params;
+  const accs = await getAccounts();
+  const toAcc = accs.find((a) => a.id === toAccountId);
+
+  const isLoanOrDebtRepayment = toAcc && isLiabilityAccount(toAcc.type);
+  const defaultCategory = isLoanOrDebtRepayment ? "Loan / Debt" : "Transfer";
+  const defaultNote = note || (toAcc ? `Transfer to ${toAcc.name}` : "Account Transfer");
+
+  return addTransaction({
+    type: "transfer",
+    amount,
+    accountId: fromAccountId,
+    toAccountId,
+    category: category || defaultCategory,
+    note: defaultNote,
+    merchant: toAcc ? toAcc.name : undefined,
+    date: date || new Date().toISOString().slice(0, 10),
+  });
 }
 
 export async function addManyTransactions(txns: Omit<Transaction, "id" | "createdAt">[]) {
@@ -505,11 +572,7 @@ export async function addManyTransactions(txns: Omit<Transaction, "id" | "create
       createdAt: new Date().toISOString(),
     };
     list.unshift(tx);
-
-    const idx = accs.findIndex((a) => a.id === t.accountId);
-    if (idx >= 0) {
-      adjustAccountForTransaction(accs[idx], t.amount, t.type === "income", false);
-    }
+    applyTransactionToAccounts(accs, tx, false);
   }
 
   await setTransactions(list, false);
@@ -526,28 +589,12 @@ export async function updateTransaction(updated: Transaction) {
     await setTransactions(list, false);
 
     const accs = await getAccounts();
-    const oldAccIdx = accs.findIndex((a) => a.id === old.accountId);
-    const newAccIdx = accs.findIndex((a) => a.id === updated.accountId);
+    // Revert old effects
+    applyTransactionToAccounts(accs, old, true);
+    // Apply updated effects
+    applyTransactionToAccounts(accs, updated, false);
+    await setAccounts(accs, false);
 
-    if (old.accountId === updated.accountId) {
-      // Same account, adjust net difference
-      if (newAccIdx >= 0) {
-        // Revert old
-        adjustAccountForTransaction(accs[newAccIdx], old.amount, old.type === "income", true);
-        // Apply new
-        adjustAccountForTransaction(accs[newAccIdx], updated.amount, updated.type === "income", false);
-        await setAccounts(accs, false);
-      }
-    } else {
-      // Account changed! Revert from old account, apply to new account
-      if (oldAccIdx >= 0) {
-        adjustAccountForTransaction(accs[oldAccIdx], old.amount, old.type === "income", true);
-      }
-      if (newAccIdx >= 0) {
-        adjustAccountForTransaction(accs[newAccIdx], updated.amount, updated.type === "income", false);
-      }
-      await setAccounts(accs, false);
-    }
     await touchModified();
   }
 }
@@ -560,12 +607,10 @@ export async function deleteTransaction(idToRemove: string) {
   await addDeletedTxnId(idToRemove);
   await setTransactions(list.filter((t) => t.id !== idToRemove), false);
   const accs = await getAccounts();
-  const idx = accs.findIndex((a) => a.id === target.accountId);
-  if (idx >= 0) {
-    // Revert target transaction effect
-    adjustAccountForTransaction(accs[idx], target.amount, target.type === "income", true);
-    await setAccounts(accs, false);
-  }
+  // Revert target transaction effects
+  applyTransactionToAccounts(accs, target, true);
+  await setAccounts(accs, false);
+
   await touchModified();
   mergeWithCloud().catch(() => {});
 }

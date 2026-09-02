@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   Pressable,
@@ -13,8 +13,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { colors, radius, shadow, spacing } from "@/src/theme";
-import { addTransaction, getAccounts, getWageSettings } from "@/src/store";
-import { Account, BudgetBucket, WageSettings } from "@/src/types";
+import { addTransaction, getAccounts, getWageSettings, transferFunds } from "@/src/store";
+import { Account, BudgetBucket, WageSettings, isLiabilityAccount } from "@/src/types";
 import { CATEGORIES, INCOME_CATEGORIES } from "@/src/constants";
 import {
   amountToWorkHours,
@@ -26,19 +26,32 @@ import {
 
 const BUCKET_OPTIONS: { key: BudgetBucket; label: string; emoji: string }[] = [
   { key: "needs", label: "Must-Haves", emoji: "🍞" },
-  { key: "comfort", label: "Comfort Fund", emoji: "🎁" },
-  { key: "savings", label: "Savings / Stash", emoji: "📈" },
+  { key: "comfort", label: "Comfort", emoji: "🎁" },
+  { key: "savings", label: "Savings", emoji: "📈" },
 ];
 
 export default function QuickAddModal() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ amount?: string; category?: string; merchant?: string; note?: string; type?: string }>();
-  
-  const [recordType, setRecordType] = useState<"expense" | "income">((params.type as any) || "expense");
+  const params = useLocalSearchParams<{
+    amount?: string;
+    category?: string;
+    merchant?: string;
+    note?: string;
+    type?: string;
+    from?: string;
+    to?: string;
+  }>();
+
+  const [recordType, setRecordType] = useState<"expense" | "income" | "transfer">(
+    (params.type as any) || "expense"
+  );
   const [amountStr, setAmountStr] = useState(params.amount ? String(params.amount) : "0");
-  const [category, setCategory] = useState<string>(params.category || (params.type === "income" ? "Salary" : "Makan"));
+  const [category, setCategory] = useState<string>(
+    params.category || (params.type === "income" ? "Salary" : "Makan")
+  );
   const [bucket, setBucket] = useState<BudgetBucket | undefined>(undefined);
   const [accountId, setAccountId] = useState<string>("");
+  const [toAccountId, setToAccountId] = useState<string>("");
   const [merchant, setMerchant] = useState<string>(params.merchant || "");
   const [note, setNote] = useState<string>(params.note || "");
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -56,9 +69,18 @@ export default function QuickAddModal() {
       const [accs, w] = await Promise.all([getAccounts(), getWageSettings()]);
       setAccounts(accs);
       setWage(w);
-      if (accs.length > 0) setAccountId(accs[0].id);
+      if (accs.length > 0) {
+        const defaultFrom = params.from || accs[0].id;
+        setAccountId(defaultFrom);
+        const defaultTo =
+          params.to ||
+          accs.find((a) => a.id !== defaultFrom && isLiabilityAccount(a.type))?.id ||
+          accs.find((a) => a.id !== defaultFrom)?.id ||
+          accs[0].id;
+        setToAccountId(defaultTo);
+      }
     })();
-  }, []);
+  }, [params.from, params.to]);
 
   const handleKeyPress = (val: string) => {
     Haptics.selectionAsync().catch(() => {});
@@ -92,22 +114,42 @@ export default function QuickAddModal() {
   const reaction = getBobaReaction(workHours);
   const timeFormatted = formatTimeCost(currentAmt, wage.hourlyRate);
   const isIncome = recordType === "income";
+  const isTransfer = recordType === "transfer";
+
+  const fromAcc = accounts.find((a) => a.id === accountId);
+  const toAcc = accounts.find((a) => a.id === toAccountId);
+  const isToLoanOrDebt = toAcc ? isLiabilityAccount(toAcc.type) : false;
 
   const handleSave = async () => {
     const amt = parseFloat(amountStr);
     if (!amt || amt <= 0 || !accountId) return;
     setSaving(true);
     try {
-      await addTransaction({
-        type: recordType,
-        amount: amt,
-        category,
-        bucket: isIncome ? undefined : bucket,
-        accountId,
-        merchant: merchant.trim() || undefined,
-        note: note.trim() || undefined,
-        date: todayISO(),
-      });
+      if (isTransfer) {
+        if (!toAccountId || accountId === toAccountId) {
+          setSaving(false);
+          return;
+        }
+        await transferFunds({
+          fromAccountId: accountId,
+          toAccountId,
+          amount: amt,
+          note: note.trim() || undefined,
+          category: isToLoanOrDebt ? "Loan / Debt" : "Transfer",
+          date: todayISO(),
+        });
+      } else {
+        await addTransaction({
+          type: recordType,
+          amount: amt,
+          category: isIncome ? category : category,
+          bucket: isIncome ? undefined : bucket,
+          accountId,
+          merchant: merchant.trim() || undefined,
+          note: note.trim() || undefined,
+          date: todayISO(),
+        });
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       router.back();
     } catch (e) {
@@ -130,25 +172,40 @@ export default function QuickAddModal() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-      {/* Header */}
+      {/* 1. PINNED HEADER */}
       <View style={styles.header}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           <Image
-            source={isIncome ? require("@/assets/mascot_rich.jpg") : require("@/assets/mascot.jpg")}
-            style={{ width: 36, height: 36, borderRadius: 18 }}
+            source={
+              isIncome
+                ? require("@/assets/mascot_rich.jpg")
+                : isTransfer
+                ? require("@/assets/mascot_zen.jpg")
+                : require("@/assets/mascot.jpg")
+            }
+            style={{ width: 34, height: 34, borderRadius: 17 }}
           />
-          <Text style={styles.title}>{isIncome ? "Deposit Income 💰" : "Quick Add Expense 💸"}</Text>
+          <Text style={styles.title}>
+            {isIncome
+              ? "Deposit Income 💰"
+              : isTransfer
+              ? isToLoanOrDebt
+                ? "Deduct Loan Repayment 💸"
+                : "Account Transfer 🔁"
+              : "Quick Add Expense 💸"}
+          </Text>
         </View>
         <Pressable onPress={handleClose} testID="close-quick-add" hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}>
-          <Ionicons name="close-circle" size={32} color={colors.onSurfaceSecondary} />
+          <Ionicons name="close-circle" size={30} color={colors.onSurfaceSecondary} />
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Expense vs Income Segmented Toggle */}
+      {/* 2. PINNED AMOUNT & CONVERTER SECTION (ALWAYS VISIBLE ABOVE KEYPAD) */}
+      <View style={styles.pinnedAmountCard}>
+        {/* Segmented Control Toggle: Expense | Income | Transfer */}
         <View style={styles.typeToggleWrapper}>
           <Pressable
-            style={[styles.typeToggleBtn, !isIncome && styles.typeToggleBtnActiveExpense]}
+            style={[styles.typeToggleBtn, recordType === "expense" && styles.typeToggleBtnActiveExpense]}
             onPress={() => {
               Haptics.selectionAsync().catch(() => {});
               setRecordType("expense");
@@ -157,12 +214,12 @@ export default function QuickAddModal() {
               }
             }}
           >
-            <Text style={[styles.typeToggleText, !isIncome && styles.typeToggleTextActive]}>
+            <Text style={[styles.typeToggleText, recordType === "expense" && styles.typeToggleTextActive]}>
               💸 Expense
             </Text>
           </Pressable>
           <Pressable
-            style={[styles.typeToggleBtn, isIncome && styles.typeToggleBtnActiveIncome]}
+            style={[styles.typeToggleBtn, recordType === "income" && styles.typeToggleBtnActiveIncome]}
             onPress={() => {
               Haptics.selectionAsync().catch(() => {});
               setRecordType("income");
@@ -171,183 +228,267 @@ export default function QuickAddModal() {
               }
             }}
           >
-            <Text style={[styles.typeToggleText, isIncome && styles.typeToggleTextActive]}>
+            <Text style={[styles.typeToggleText, recordType === "income" && styles.typeToggleTextActive]}>
               💰 Income
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.typeToggleBtn, recordType === "transfer" && styles.typeToggleBtnActiveTransfer]}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              setRecordType("transfer");
+            }}
+          >
+            <Text style={[styles.typeToggleText, recordType === "transfer" && styles.typeToggleTextActive]}>
+              🔁 Transfer
             </Text>
           </Pressable>
         </View>
 
-        {/* Amount Display */}
-        <View style={styles.amountBox}>
-          <Text style={styles.currencySymbol}>{isIncome ? "+RM" : "RM"}</Text>
-          <Text style={[styles.amountText, isIncome && { color: "#059669" }]}>{amountStr}</Text>
+        {/* Large Amount Display with Clear Indicator */}
+        <View style={styles.amountDisplayRow}>
+          <Text
+            style={[
+              styles.currencySymbol,
+              isIncome && { color: "#059669" },
+              isTransfer && { color: colors.brandPrimary },
+            ]}
+          >
+            {isIncome ? "+RM" : "RM"}
+          </Text>
+          <Text
+            style={[
+              styles.amountText,
+              isIncome && { color: "#059669" },
+              isTransfer && { color: colors.brandPrimary },
+            ]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            {amountStr}
+          </Text>
         </View>
 
-        {/* Live Money -> Work Time Conversion Pill */}
-        <View
-          style={[
-            styles.timeConverterPill,
-            isIncome ? { borderColor: "#A7F3D0", backgroundColor: "#F0FDF4" } : { borderColor: reaction.color },
-          ]}
-        >
-          <View style={[styles.mascotSmallWrap, isIncome && { backgroundColor: "#DCFCE7" }]}>
-            <Image
-              source={isIncome ? require("@/assets/mascot_rich.jpg") : require("@/assets/mascot_coin.jpg")}
-              style={{ width: 36, height: 36, borderRadius: 18 }}
-              contentFit="contain"
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.timeConverterTitle}>
+        {/* Compact Life Work-Time Badge */}
+        <View style={styles.timeBadgeRow}>
+          <View
+            style={[
+              styles.timeBadge,
+              isIncome
+                ? { backgroundColor: "#ECFDF5", borderColor: "#A7F3D0" }
+                : isTransfer
+                ? { backgroundColor: "#EEF2FF", borderColor: "#C7D2FE" }
+                : { backgroundColor: colors.surfaceTertiary, borderColor: reaction.color },
+            ]}
+          >
+            <Text style={styles.timeBadgeIcon}>{isIncome ? "🌿" : isTransfer ? "🔁" : "⏱️"}</Text>
+            <Text style={styles.timeBadgeText}>
               {isIncome ? (
                 <>
-                  Earns <Text style={{ color: "#059669", fontWeight: "800" }}>+{timeFormatted}</Text> of life freedom 🌿
+                  Earns <Text style={{ fontWeight: "800", color: "#059669" }}>+{timeFormatted}</Text> of freedom (+{workHours.toFixed(1)}h)
                 </>
+              ) : isTransfer ? (
+                isToLoanOrDebt ? (
+                  <>
+                    Clears <Text style={{ fontWeight: "800", color: colors.brandPrimary }}>{timeFormatted}</Text> of debt ({workHours.toFixed(1)}h work)
+                  </>
+                ) : (
+                  <>
+                    Moving <Text style={{ fontWeight: "800", color: colors.brandPrimary }}>{rm(currentAmt)}</Text> ({workHours.toFixed(1)}h work value)
+                  </>
+                )
               ) : (
                 <>
-                  Costs <Text style={{ color: colors.brandPrimary, fontWeight: "800" }}>{timeFormatted}</Text> of your life
+                  Costs <Text style={{ fontWeight: "800", color: colors.brandPrimary }}>{timeFormatted}</Text> of work ({workHours.toFixed(1)}h)
                 </>
               )}
             </Text>
-            <Text style={styles.timeConverterDesc}>
-              {isIncome
-                ? `Adds +${workHours.toFixed(1)} hrs towards your freedom (at RM ${wage.hourlyRate.toFixed(2)}/hr)`
-                : `${reaction.desc} (at RM ${wage.hourlyRate.toFixed(2)}/hr)`}
-            </Text>
           </View>
         </View>
+      </View>
 
-        {/* Categories Pills */}
-        <Text style={styles.sectionLabel}>{isIncome ? "Income Category" : "Expense Category"}</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.md }}>
-          <View style={styles.pillRow}>
-            {(isIncome ? INCOME_CATEGORIES : CATEGORIES).map((cat) => {
-              const isSel = category === cat.key;
-              return (
-                <Pressable
-                  key={cat.key}
-                  testID={`cat-pill-${cat.key}`}
-                  onPress={() => {
-                    Haptics.selectionAsync().catch(() => {});
-                    setCategory(cat.key);
-                  }}
-                  style={[
-                    styles.pill,
-                    isSel && (isIncome ? styles.pillSelectedIncome : styles.pillSelected),
-                  ]}
-                >
-                  <Text style={{ fontSize: 16 }}>{cat.emoji}</Text>
-                  <Text style={[styles.pillText, isSel && styles.pillTextSelected]}>{cat.key}</Text>
-                </Pressable>
-              );
-            })}
+      {/* 3. MIDDLE CONFIGURATION AREA (COMPACT SCROLL) */}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.middleScrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        {isTransfer ? (
+          /* TRANSFER SELECTION */
+          <View style={styles.transferConfigBox}>
+            <View style={styles.transferAccRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>FROM ACCOUNT</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                  {accounts
+                    .filter((a) => !isLiabilityAccount(a.type) || a.balance > 0)
+                    .map((acc) => {
+                      const isSel = accountId === acc.id;
+                      return (
+                        <Pressable
+                          key={acc.id}
+                          onPress={() => {
+                            Haptics.selectionAsync().catch(() => {});
+                            setAccountId(acc.id);
+                          }}
+                          style={[
+                            styles.compactAccPill,
+                            isSel && styles.compactAccPillActive,
+                            { borderLeftColor: acc.color, borderLeftWidth: 3 },
+                          ]}
+                        >
+                          <Text style={{ fontSize: 13 }}>{acc.emoji}</Text>
+                          <Text style={[styles.compactAccText, isSel && styles.compactAccTextActive]}>
+                            {acc.name.split(" ")[0]} ({rm(acc.balance)})
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                </ScrollView>
+              </View>
+
+              <View style={styles.transferArrowWrap}>
+                <Ionicons name="arrow-forward" size={16} color={colors.brandPrimary} />
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>TO ACCOUNT</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                  {accounts
+                    .filter((a) => a.id !== accountId)
+                    .map((acc) => {
+                      const isSel = toAccountId === acc.id;
+                      const isDebt = isLiabilityAccount(acc.type);
+                      return (
+                        <Pressable
+                          key={acc.id}
+                          onPress={() => {
+                            Haptics.selectionAsync().catch(() => {});
+                            setToAccountId(acc.id);
+                          }}
+                          style={[
+                            styles.compactAccPill,
+                            isSel && (isDebt ? styles.compactAccPillDebt : styles.compactAccPillActive),
+                            { borderLeftColor: acc.color, borderLeftWidth: 3 },
+                          ]}
+                        >
+                          <Text style={{ fontSize: 13 }}>{acc.emoji}</Text>
+                          <Text style={[styles.compactAccText, isSel && styles.compactAccTextActive]}>
+                            {acc.name.split(" ")[0]} {isDebt ? `(-${rm(acc.balance)})` : `(${rm(acc.balance)})`}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                </ScrollView>
+              </View>
+            </View>
+
+            {/* Note input for transfer */}
+            <TextInput
+              value={note}
+              onChangeText={setNote}
+              placeholder={isToLoanOrDebt ? "Memo (e.g. Monthly Car Loan Repayment)" : "Note / Transfer Memo"}
+              placeholderTextColor={colors.onSurfaceSecondary}
+              style={styles.compactInput}
+            />
           </View>
-        </ScrollView>
-
-        {/* Budget Pool Chips (for expenses only) */}
-        {!isIncome && (
+        ) : (
+          /* EXPENSE OR INCOME CONFIGURATION */
           <>
-            <Text style={styles.sectionLabel}>Budget Pool / Bucket (Optional)</Text>
-            <View style={{ flexDirection: "row", gap: 8, marginBottom: spacing.md }}>
-              {BUCKET_OPTIONS.map((b) => {
-                const isSel = bucket === b.key;
-                return (
-                  <Pressable
-                    key={b.key}
-                    onPress={() => {
-                      Haptics.selectionAsync().catch(() => {});
-                      setBucket(isSel ? undefined : b.key);
-                    }}
-                    style={[
-                      styles.bucketOptionChip,
-                      isSel && styles.bucketOptionChipActive,
-                    ]}
-                  >
-                    <Text style={{ fontSize: 14 }}>{b.emoji}</Text>
-                    <Text style={[styles.bucketOptionChipText, isSel && styles.bucketOptionChipTextActive]}>
-                      {b.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+            {/* Category selection */}
+            <View style={{ marginBottom: 6 }}>
+              <Text style={styles.fieldLabel}>{isIncome ? "INCOME CATEGORY" : "CATEGORY"}</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                {(isIncome ? INCOME_CATEGORIES : CATEGORIES).map((cat) => {
+                  const isSel = category === cat.key;
+                  return (
+                    <Pressable
+                      key={cat.key}
+                      onPress={() => {
+                        Haptics.selectionAsync().catch(() => {});
+                        setCategory(cat.key);
+                      }}
+                      style={[
+                        styles.catPill,
+                        isSel && (isIncome ? styles.catPillIncomeActive : styles.catPillActive),
+                      ]}
+                    >
+                      <Text style={{ fontSize: 13 }}>{cat.emoji}</Text>
+                      <Text style={[styles.catPillText, isSel && styles.catPillTextActive]}>{cat.key}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {/* Account selection */}
+            <View style={{ marginBottom: 6 }}>
+              <Text style={styles.fieldLabel}>{isIncome ? "RECEIVING ACCOUNT" : "PAID VIA ACCOUNT"}</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                {accounts.map((acc) => {
+                  const isSel = accountId === acc.id;
+                  return (
+                    <Pressable
+                      key={acc.id}
+                      onPress={() => {
+                        Haptics.selectionAsync().catch(() => {});
+                        setAccountId(acc.id);
+                      }}
+                      style={[
+                        styles.accChip,
+                        isSel && (isIncome ? styles.accChipIncomeActive : styles.accChipActive),
+                        { borderLeftColor: acc.color, borderLeftWidth: 3 },
+                      ]}
+                    >
+                      <Text style={{ fontSize: 13 }}>{acc.emoji}</Text>
+                      <Text style={[styles.accChipName, isSel && styles.accChipNameActive]}>{acc.name}</Text>
+                      <Text style={[styles.accChipBal, isSel && styles.accChipBalActive]}>{rm(acc.balance)}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {/* Compact Merchant & Note Row */}
+            <View style={styles.inputsRow}>
+              <TextInput
+                value={merchant}
+                onChangeText={setMerchant}
+                placeholder={isIncome ? "Payer (e.g. Employer)" : "Merchant (e.g. Tealive)"}
+                placeholderTextColor={colors.onSurfaceSecondary}
+                style={[styles.compactInput, { flex: 1 }]}
+              />
+              <TextInput
+                value={note}
+                onChangeText={setNote}
+                placeholder="Memo (optional)"
+                placeholderTextColor={colors.onSurfaceSecondary}
+                style={[styles.compactInput, { flex: 1 }]}
+              />
             </View>
           </>
         )}
+      </ScrollView>
 
-        {/* Account Pills */}
-        <Text style={styles.sectionLabel}>
-          {isIncome ? "Deposit / Receiving Account" : "Payment Account / Card"}
-        </Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.md }}>
-          <View style={styles.pillRow}>
-            {accounts.map((acc) => {
-              const isSel = accountId === acc.id;
-              return (
-                <Pressable
-                  key={acc.id}
-                  testID={`acc-pill-${acc.id}`}
-                  onPress={() => {
-                    Haptics.selectionAsync().catch(() => {});
-                    setAccountId(acc.id);
-                  }}
-                  style={[
-                    styles.pill,
-                    isSel && (isIncome ? styles.pillSelectedIncome : styles.pillSelected),
-                    { borderLeftColor: acc.color, borderLeftWidth: 3 },
-                  ]}
-                >
-                  <Text style={{ fontSize: 16 }}>{acc.emoji}</Text>
-                  <View>
-                    <Text style={[styles.pillText, isSel && styles.pillTextSelected]}>{acc.name}</Text>
-                    <Text style={{ fontSize: 10, color: isSel ? "#FFFFFF" : colors.onSurfaceSecondary, fontWeight: "600" }}>
-                      {rm(acc.balance)}
-                    </Text>
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
-        </ScrollView>
-
-        {/* Merchant & Note Inputs */}
-        <View style={styles.inputsRow}>
-          <TextInput
-            testID="merchant-input"
-            value={merchant}
-            onChangeText={setMerchant}
-            placeholder={isIncome ? "Payer / Source (e.g. Company Name, Client)" : "Merchant (e.g. Tealive, Gigi Coffee)"}
-            placeholderTextColor={colors.onSurfaceSecondary}
-            style={styles.input}
-          />
-          <TextInput
-            testID="note-input"
-            value={note}
-            onChangeText={setNote}
-            placeholder="Note / Memo (optional)"
-            placeholderTextColor={colors.onSurfaceSecondary}
-            style={styles.input}
-          />
-        </View>
-
-        {/* Numeric Keypad */}
-        <View style={styles.keypad}>
+      {/* 4. PINNED KEYPAD & SAVE BUTTON AT THE BOTTOM */}
+      <View style={styles.bottomKeypadContainer}>
+        <View style={styles.keypadGrid}>
           {keys.map((k) => (
             <Pressable
               key={k}
-              testID={`keypad-${k}`}
               onPress={() => handleKeyPress(k)}
-              style={({ pressed }) => [styles.key, pressed && { backgroundColor: colors.borderStrong }]}
+              style={({ pressed }) => [styles.keyBtn, pressed && { backgroundColor: colors.borderStrong }]}
             >
               {k === "DEL" ? (
-                <Ionicons name="backspace-outline" size={24} color={colors.onSurface} />
+                <Ionicons name="backspace-outline" size={22} color={colors.onSurface} />
               ) : (
-                <Text style={styles.keyText}>{k}</Text>
+                <Text style={styles.keyBtnText}>{k}</Text>
               )}
             </Pressable>
           ))}
         </View>
 
-        {/* Save Button */}
+        {/* Save Transaction Button */}
         <Pressable
           testID="save-txn-btn"
           onPress={handleSave}
@@ -355,229 +496,289 @@ export default function QuickAddModal() {
           style={[
             styles.saveBtn,
             isIncome && { backgroundColor: "#10B981" },
+            isTransfer && { backgroundColor: isToLoanOrDebt ? "#059669" : colors.brandPrimary },
             (saving || currentAmt <= 0) && { opacity: 0.5 },
           ]}
         >
           <Text style={styles.saveBtnText}>
-            {saving ? "Saving…" : isIncome ? "Deposit Income 💰" : "Save Expense 🍞"}
+            {saving
+              ? "Saving…"
+              : isIncome
+              ? `Deposit Income · ${rm(currentAmt)}`
+              : isTransfer
+              ? isToLoanOrDebt
+                ? `Deduct Repayment · ${rm(currentAmt)} 💸`
+                : `Transfer Funds · ${rm(currentAmt)} 🔁`
+              : `Save Expense · ${rm(currentAmt)} 🍞`}
           </Text>
         </Pressable>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
+  container: {
+    flex: 1,
+    backgroundColor: colors.surface,
+  },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
   title: {
     fontWeight: "800",
-    fontSize: 20,
+    fontSize: 16,
     color: colors.onSurface,
-    letterSpacing: -0.3,
   },
-  scrollContent: { paddingHorizontal: spacing.lg, paddingBottom: 40 },
-  amountBox: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    justifyContent: "center",
-    marginVertical: spacing.md,
-    gap: 6,
-  },
-  currencySymbol: {
-    fontWeight: "700",
-    fontSize: 22,
-    color: colors.onSurfaceSecondary,
-  },
-  amountText: {
-    fontWeight: "800",
-    fontSize: 44,
-    color: colors.onSurface,
-    letterSpacing: -0.8,
-  },
-  timeConverterPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
+  pinnedAmountCard: {
     backgroundColor: colors.surfaceSecondary,
-    borderWidth: 1.5,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    ...shadow.soft,
-  },
-  mascotSmallWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.pink,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
     alignItems: "center",
-    justifyContent: "center",
-  },
-  timeConverterTitle: {
-    fontWeight: "700",
-    fontSize: 14,
-    color: colors.onSurface,
-  },
-  timeConverterDesc: {
-    fontWeight: "500",
-    fontSize: 11,
-    color: colors.onSurfaceSecondary,
-    marginTop: 2,
-  },
-  sectionLabel: {
-    fontWeight: "700",
-    fontSize: 12,
-    color: colors.onSurfaceSecondary,
-    marginBottom: spacing.xs,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  pillRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    paddingVertical: 4,
-  },
-  pill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: colors.surfaceSecondary,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    borderRadius: radius.pill,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  pillSelected: {
-    backgroundColor: colors.brandPrimary,
-    borderColor: colors.brandPrimary,
-  },
-  pillText: {
-    fontWeight: "700",
-    fontSize: 12,
-    color: colors.onSurface,
-  },
-  pillTextSelected: {
-    color: colors.onBrandPrimary,
-  },
-  inputsRow: {
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  input: {
-    backgroundColor: colors.surfaceSecondary,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 10,
-    fontWeight: "600",
-    fontSize: 14,
-    color: colors.onSurface,
-  },
-  keypad: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    gap: 8,
-    marginVertical: spacing.md,
-  },
-  key: {
-    width: "31%",
-    aspectRatio: 2,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-    ...shadow.soft,
-  },
-  keyText: {
-    fontWeight: "700",
-    fontSize: 22,
-    color: colors.onSurface,
   },
   typeToggleWrapper: {
     flexDirection: "row",
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
     padding: 3,
+    borderRadius: radius.pill,
+    marginBottom: 8,
     borderWidth: 1,
-    borderColor: colors.borderStrong,
-    marginBottom: spacing.md,
+    borderColor: colors.border,
+    alignSelf: "center",
   },
   typeToggleBtn: {
-    flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
     borderRadius: radius.pill,
-    alignItems: "center",
-    justifyContent: "center",
   },
   typeToggleBtnActiveExpense: {
-    backgroundColor: colors.brandPrimary,
-    ...shadow.soft,
+    backgroundColor: "#EF4444",
   },
   typeToggleBtnActiveIncome: {
     backgroundColor: "#10B981",
-    ...shadow.soft,
+  },
+  typeToggleBtnActiveTransfer: {
+    backgroundColor: colors.brandPrimary,
   },
   typeToggleText: {
+    fontSize: 11,
     fontWeight: "700",
-    fontSize: 14,
     color: colors.onSurfaceSecondary,
   },
   typeToggleTextActive: {
     color: "#FFFFFF",
-    fontWeight: "800",
   },
-  pillSelectedIncome: {
+  amountDisplayRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "center",
+    marginVertical: 2,
+  },
+  currencySymbol: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#EF4444",
+    marginRight: 4,
+  },
+  amountText: {
+    fontSize: 38,
+    fontWeight: "900",
+    color: "#EF4444",
+    letterSpacing: -1,
+  },
+  timeBadgeRow: {
+    marginTop: 4,
+  },
+  timeBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  timeBadgeIcon: {
+    fontSize: 12,
+  },
+  timeBadgeText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.onSurface,
+  },
+  middleScrollContent: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+  },
+  fieldLabel: {
+    fontSize: 9.5,
+    fontWeight: "800",
+    color: colors.onSurfaceSecondary,
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  catPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  catPillActive: {
+    backgroundColor: "#EF4444",
+    borderColor: "#EF4444",
+  },
+  catPillIncomeActive: {
     backgroundColor: "#10B981",
     borderColor: "#10B981",
   },
-  bucketOptionChip: {
-    flex: 1,
+  catPillText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.onSurface,
+  },
+  catPillTextActive: {
+    color: "#FFFFFF",
+  },
+  accChip: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 8,
-    borderRadius: radius.md,
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
     backgroundColor: colors.surfaceSecondary,
     borderWidth: 1,
-    borderColor: colors.borderStrong,
+    borderColor: colors.border,
   },
-  bucketOptionChipActive: {
-    backgroundColor: colors.surfaceTertiary,
+  accChipActive: {
+    backgroundColor: colors.brandPrimary,
     borderColor: colors.brandPrimary,
   },
-  bucketOptionChipText: {
+  accChipIncomeActive: {
+    backgroundColor: "#10B981",
+    borderColor: "#10B981",
+  },
+  accChipName: {
+    fontSize: 11,
     fontWeight: "700",
-    fontSize: 12,
+    color: colors.onSurface,
+  },
+  accChipNameActive: {
+    color: "#FFFFFF",
+  },
+  accChipBal: {
+    fontSize: 9.5,
+    fontWeight: "600",
     color: colors.onSurfaceSecondary,
   },
-  bucketOptionChipTextActive: {
-    color: colors.brandPrimary,
-    fontWeight: "800",
+  accChipBalActive: {
+    color: "rgba(255,255,255,0.85)",
+  },
+  inputsRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 4,
+  },
+  compactInput: {
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.onSurface,
+  },
+  transferConfigBox: {
+    gap: 6,
+  },
+  transferAccRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  transferArrowWrap: {
+    paddingTop: 14,
+  },
+  compactAccPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: colors.surfaceSecondary,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  compactAccPillActive: {
+    backgroundColor: colors.brandPrimary,
+    borderColor: colors.brandPrimary,
+  },
+  compactAccPillDebt: {
+    backgroundColor: "#DC2626",
+    borderColor: "#DC2626",
+  },
+  compactAccText: {
+    fontSize: 10.5,
+    fontWeight: "700",
+    color: colors.onSurface,
+  },
+  compactAccTextActive: {
+    color: "#FFFFFF",
+  },
+  bottomKeypadContainer: {
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingTop: 8,
+    paddingBottom: 8,
+  },
+  keypadGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  keyBtn: {
+    width: "31%",
+    height: 44,
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceSecondary,
+    marginBottom: 6,
+  },
+  keyBtnText: {
+    fontSize: 19,
+    fontWeight: "700",
+    color: colors.onSurface,
   },
   saveBtn: {
-    backgroundColor: colors.brandPrimary,
+    backgroundColor: "#EF4444",
+    paddingVertical: 12,
     borderRadius: radius.pill,
-    paddingVertical: 14,
     alignItems: "center",
-    marginTop: spacing.sm,
+    marginTop: 4,
     ...shadow.glow,
   },
   saveBtnText: {
-    color: colors.onBrandPrimary,
+    color: "#FFFFFF",
     fontWeight: "800",
-    fontSize: 16,
+    fontSize: 14,
   },
 });
