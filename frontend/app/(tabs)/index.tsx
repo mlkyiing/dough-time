@@ -48,6 +48,11 @@ import { CloudSyncModal } from "@/src/components/CloudSyncModal";
 import { SmartBudgetModal } from "@/src/components/SmartBudgetModal";
 import { CuteAppBackground } from "@/src/components/CuteAppBackground";
 import { calculateBucketSpending } from "@/src/utils/budgetAnalyzer";
+import { PaydaySplitModal } from "@/src/components/PaydaySplitModal";
+import { PurchaseSimulatorModal } from "@/src/components/PurchaseSimulatorModal";
+import { RecurringModal } from "@/src/components/RecurringModal";
+import { MonthlyWrappedModal } from "@/src/components/MonthlyWrappedModal";
+import { DebtFreedomModal } from "@/src/components/DebtFreedomModal";
 
 export default function HomeDashboard() {
   const router = useRouter();
@@ -77,6 +82,12 @@ export default function HomeDashboard() {
   const [tempSalary, setTempSalary] = useState("4500");
   const [tempHours, setTempHours] = useState("40");
   const [tempBudgetLimit, setTempBudgetLimit] = useState("2000");
+
+  const [showPaydayModal, setShowPaydayModal] = useState(false);
+  const [showSimulatorModal, setShowSimulatorModal] = useState(false);
+  const [showRecurringModal, setShowRecurringModal] = useState(false);
+  const [showWrappedModal, setShowWrappedModal] = useState(false);
+  const [showDebtFreedomModal, setShowDebtFreedomModal] = useState(false);
 
   const loadData = useCallback(async () => {
     await seedIfNeeded();
@@ -553,6 +564,63 @@ export default function HomeDashboard() {
           </View>
         </View>
 
+        {/* DoughTime Power Hub */}
+        <View style={styles.powerHubSection}>
+          <View style={styles.powerHubHeader}>
+            <Text style={styles.powerHubTitle}>⚡ DoughTime Power Hub</Text>
+            <Text style={styles.powerHubSub}>Smart Life-Energy Utilities</Text>
+          </View>
+          <View style={styles.powerHubGrid}>
+            <Pressable
+              style={({ pressed }) => [styles.powerTile, pressed && { opacity: 0.85 }]}
+              onPress={() => {
+                setShowPaydayModal(true);
+                Haptics.selectionAsync().catch(() => {});
+              }}
+            >
+              <Text style={{ fontSize: 24 }}>⚡</Text>
+              <Text style={styles.powerTileTitle}>Payday Split</Text>
+              <Text style={styles.powerTileSub}>Auto-allocator</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [styles.powerTile, pressed && { opacity: 0.85 }]}
+              onPress={() => {
+                setShowSimulatorModal(true);
+                Haptics.selectionAsync().catch(() => {});
+              }}
+            >
+              <Text style={{ fontSize: 24 }}>⏳</Text>
+              <Text style={styles.powerTileTitle}>Is It Worth It?</Text>
+              <Text style={styles.powerTileSub}>48h chill tank</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [styles.powerTile, pressed && { opacity: 0.85 }]}
+              onPress={() => {
+                setShowRecurringModal(true);
+                Haptics.selectionAsync().catch(() => {});
+              }}
+            >
+              <Text style={{ fontSize: 24 }}>🔁</Text>
+              <Text style={styles.powerTileTitle}>Recurring</Text>
+              <Text style={styles.powerTileSub}>Bills & subs</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [styles.powerTile, pressed && { opacity: 0.85 }]}
+              onPress={() => {
+                setShowWrappedModal(true);
+                Haptics.selectionAsync().catch(() => {});
+              }}
+            >
+              <Text style={{ fontSize: 24 }}>🎁</Text>
+              <Text style={styles.powerTileTitle}>Wrapped</Text>
+              <Text style={styles.powerTileSub}>Monthly story</Text>
+            </Pressable>
+          </View>
+        </View>
+
         {/* Accounts horizontal scroll */}
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>My Accounts & Cards</Text>
@@ -716,6 +784,41 @@ export default function HomeDashboard() {
         visible={syncModalOpen}
         onClose={() => setSyncModalOpen(false)}
         onDataRestored={loadData}
+      />
+
+      {/* Payday Auto-Splitter Modal */}
+      <PaydaySplitModal
+        visible={showPaydayModal}
+        accounts={accounts}
+        wage={wage}
+        onClose={() => setShowPaydayModal(false)}
+        onSuccess={loadData}
+      />
+
+      {/* Purchase Simulator & 48h Chill Tank Modal */}
+      <PurchaseSimulatorModal
+        visible={showSimulatorModal}
+        wage={wage}
+        accounts={accounts}
+        onClose={() => setShowSimulatorModal(false)}
+        onSuccess={loadData}
+      />
+
+      {/* Recurring Subscriptions Modal */}
+      <RecurringModal
+        visible={showRecurringModal}
+        accounts={accounts}
+        wage={wage}
+        onClose={() => setShowRecurringModal(false)}
+        onSuccess={loadData}
+      />
+
+      {/* Monthly Wrapped Story Modal */}
+      <MonthlyWrappedModal
+        visible={showWrappedModal}
+        transactions={transactions}
+        wage={wage}
+        onClose={() => setShowWrappedModal(false)}
       />
     </SafeAreaView>
   );
@@ -1314,5 +1417,55 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     fontSize: 15,
     color: colors.onBrandPrimary,
+  },
+  powerHubSection: {
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    ...shadow.soft,
+  },
+  powerHubHeader: {
+    marginBottom: spacing.sm,
+  },
+  powerHubTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: colors.onSurface,
+  },
+  powerHubSub: {
+    fontSize: 11,
+    color: colors.onSurfaceSecondary,
+    marginTop: 1,
+  },
+  powerHubGrid: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  powerTile: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    alignItems: "center",
+    ...shadow.soft,
+  },
+  powerTileTitle: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: colors.onSurface,
+    marginTop: 4,
+    textAlign: "center",
+  },
+  powerTileSub: {
+    fontSize: 9,
+    color: colors.onSurfaceSecondary,
+    marginTop: 1,
+    textAlign: "center",
   },
 });

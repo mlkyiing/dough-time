@@ -9,6 +9,9 @@ import {
   Transaction,
   VaultSnapshot,
   WageSettings,
+  PaydayPlan,
+  RecurringTxn,
+  WishlistItem,
 } from "./types";
 import { rm } from "./format";
 
@@ -21,6 +24,9 @@ const K_SYNC_SESSION = "dt.sync.session.v1";
 const K_LAST_MODIFIED = "dt.last.modified.v1";
 const K_DELETED_TXNS = "dt.deleted.txns.v1";
 const K_DELETED_ACCS = "dt.deleted.accs.v1";
+const K_PAYDAY_PLAN = "dt.payday.plan.v1";
+const K_RECURRING = "dt.recurring.v1";
+const K_WISHLIST = "dt.wishlist.v1";
 
 export const DEFAULT_WAGE: WageSettings = {
   mode: "salary",
@@ -813,4 +819,176 @@ export async function resetAll() {
 export function newAccountId() {
   return id();
 }
+
+// ----------------------------------------------------
+// Payday Auto-Splitter
+// ----------------------------------------------------
+export async function getPaydayPlan(): Promise<PaydayPlan | null> {
+  const raw = await AsyncStorage.getItem(K_PAYDAY_PLAN);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export async function setPaydayPlan(plan: PaydayPlan) {
+  await AsyncStorage.setItem(K_PAYDAY_PLAN, JSON.stringify(plan));
+  await touchModified();
+}
+
+/**
+ * Executes a Payday Plan in a single batch:
+ * 1. Records Salary Inflow into source bank account
+ * 2. Transfers funds into target loans / savings accounts
+ * 3. Records fixed family allowances / obligations as expenses
+ * 4. Marks current month as executed
+ */
+export async function executePaydayPlan(
+  plan: PaydayPlan,
+  executionDate: string = new Date().toISOString().slice(0, 10)
+): Promise<{ success: boolean; message: string }> {
+  if (!plan.sourceAccountId) {
+    return { success: false, message: "Source bank account is not selected." };
+  }
+
+  const accounts = await getAccounts();
+  const sourceAcc = accounts.find((a) => a.id === plan.sourceAccountId);
+  if (!sourceAcc) {
+    return { success: false, message: "Source account not found." };
+  }
+
+  // 1. Record Salary Inflow
+  if (plan.salaryAmount > 0) {
+    await addTransaction({
+      amount: plan.salaryAmount,
+      type: "income",
+      category: "Salary",
+      accountId: plan.sourceAccountId,
+      merchant: "Monthly Salary 💼",
+      note: `Payday salary deposit into ${sourceAcc.name}`,
+      date: executionDate,
+    });
+  }
+
+  // 2. Execute each enabled allocation item
+  for (const item of plan.items) {
+    if (!item.enabled || item.amount <= 0) continue;
+
+    if (item.type === "loan" || item.type === "savings") {
+      if (item.targetAccountId) {
+        await transferFunds({
+          fromAccountId: plan.sourceAccountId,
+          toAccountId: item.targetAccountId,
+          amount: item.amount,
+          date: executionDate,
+          note: item.note || `Payday auto-allocation: ${item.title}`,
+        });
+      }
+    } else {
+      // Obligation / Allowance / Other
+      await addTransaction({
+        amount: item.amount,
+        type: "expense",
+        category: item.category || "Other",
+        accountId: plan.sourceAccountId,
+        merchant: item.title,
+        note: item.note || `Payday allocation: ${item.title}`,
+        date: executionDate,
+      });
+    }
+  }
+
+  // 3. Update lastExecutedMonth
+  const monthStr = executionDate.slice(0, 7);
+  const updatedPlan: PaydayPlan = {
+    ...plan,
+    lastExecutedMonth: monthStr,
+  };
+  await setPaydayPlan(updatedPlan);
+  await mergeWithCloud().catch(() => {});
+
+  return { success: true, message: `Payday split executed successfully for ${sourceAcc.name}!` };
+}
+
+// ----------------------------------------------------
+// Recurring Scheduled Subscriptions
+// ----------------------------------------------------
+export async function getRecurringTxns(): Promise<RecurringTxn[]> {
+  const raw = await AsyncStorage.getItem(K_RECURRING);
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+export async function setRecurringTxns(list: RecurringTxn[]) {
+  await AsyncStorage.setItem(K_RECURRING, JSON.stringify(list));
+  await touchModified();
+}
+
+export async function addRecurringTxn(item: Omit<RecurringTxn, "id">): Promise<RecurringTxn> {
+  const list = await getRecurringTxns();
+  const created: RecurringTxn = {
+    ...item,
+    id: id(),
+  };
+  list.push(created);
+  await setRecurringTxns(list);
+  return created;
+}
+
+export async function deleteRecurringTxn(idToRemove: string) {
+  const list = (await getRecurringTxns()).filter((r) => r.id !== idToRemove);
+  await setRecurringTxns(list);
+}
+
+// ----------------------------------------------------
+// "Is It Worth It?" 48-Hour Chill-Out Wishlist
+// ----------------------------------------------------
+export async function getWishlistItems(): Promise<WishlistItem[]> {
+  const raw = await AsyncStorage.getItem(K_WISHLIST);
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+export async function setWishlistItems(list: WishlistItem[]) {
+  await AsyncStorage.setItem(K_WISHLIST, JSON.stringify(list));
+  await touchModified();
+}
+
+export async function addWishlistItem(item: Omit<WishlistItem, "id" | "createdAt" | "status">): Promise<WishlistItem> {
+  const list = await getWishlistItems();
+  const created: WishlistItem = {
+    ...item,
+    id: id(),
+    createdAt: new Date().toISOString(),
+    status: "cooling",
+  };
+  list.unshift(created);
+  await setWishlistItems(list);
+  return created;
+}
+
+export async function updateWishlistItem(updated: WishlistItem) {
+  const list = await getWishlistItems();
+  const idx = list.findIndex((w) => w.id === updated.id);
+  if (idx >= 0) {
+    list[idx] = updated;
+    await setWishlistItems(list);
+  }
+}
+
+export async function deleteWishlistItem(idToRemove: string) {
+  const list = (await getWishlistItems()).filter((w) => w.id !== idToRemove);
+  await setWishlistItems(list);
+}
+
 

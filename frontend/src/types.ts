@@ -39,6 +39,7 @@ export type Transaction = {
   merchant?: string;
   date: string; // ISO
   createdAt: string;
+  taxReliefCode?: string;
 };
 
 export type WageSettings = {
@@ -74,6 +75,63 @@ export type BudgetSettings = {
   allocationPreset?: AllocationPreset;
   categoryBudgets: CategoryBudget[];
   enabled: boolean;
+};
+
+export type PaydayAllocationType = "loan" | "savings" | "obligation" | "allowance";
+
+export type PaydayAllocationItem = {
+  id: string;
+  title: string;
+  type: PaydayAllocationType;
+  targetAccountId?: string;
+  amount: number;
+  category?: string;
+  note?: string;
+  enabled: boolean;
+};
+
+export type PaydayPlan = {
+  sourceAccountId?: string;
+  paydayDayOfMonth: number;
+  salaryAmount: number;
+  items: PaydayAllocationItem[];
+  lastExecutedMonth?: string;
+  enabled: boolean;
+};
+
+export type RecurringFrequency = "monthly" | "weekly" | "yearly";
+
+export type RecurringTxn = {
+  id: string;
+  name: string;
+  amount: number;
+  category: string;
+  accountId: string;
+  frequency: RecurringFrequency;
+  dayOfMonth: number;
+  note?: string;
+  enabled: boolean;
+  lastLoggedMonth?: string;
+};
+
+export type WishlistItem = {
+  id: string;
+  name: string;
+  price: number;
+  workHours: number;
+  coolingPeriodHours: number;
+  createdAt: string;
+  status: "cooling" | "ready" | "purchased" | "saved";
+  notes?: string;
+};
+
+export type TaxReliefCategory = {
+  code: string;
+  title: string;
+  maxLimit: number;
+  description: string;
+  qualifyingCategories: string[];
+  icon: string;
 };
 
 export function isLiabilityAccount(accountOrType: Account | AccountType): boolean {

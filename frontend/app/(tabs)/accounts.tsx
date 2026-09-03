@@ -42,6 +42,8 @@ import { CuteAppBackground } from "@/src/components/CuteAppBackground";
 import { TransferModal } from "@/src/components/TransferModal";
 import { LoanDueBanner } from "@/src/components/LoanDueBanner";
 import { getDueLoanReminders, DueLoanInfo } from "@/src/utils/notifications";
+import { DebtFreedomModal } from "@/src/components/DebtFreedomModal";
+import { PaydaySplitModal } from "@/src/components/PaydaySplitModal";
 
 export default function Accounts() {
   const insets = useSafeAreaInsets();
@@ -71,6 +73,8 @@ export default function Accounts() {
   const [transferToId, setTransferToId] = useState<string | undefined>();
   const [transferPrefillAmount, setTransferPrefillAmount] = useState<number | undefined>();
   const [dismissedReminders, setDismissedReminders] = useState<string[]>([]);
+  const [showFreedomModal, setShowFreedomModal] = useState(false);
+  const [showPaydayModal, setShowPaydayModal] = useState(false);
 
   // Custom account form fields
   const [customName, setCustomName] = useState("");
@@ -238,6 +242,17 @@ export default function Accounts() {
         </View>
         <View style={styles.headerActions}>
           <Pressable
+            testID="payday-btn"
+            style={({ pressed }) => [styles.paydayBtn, pressed && { transform: [{ scale: 0.95 }] }]}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              setShowPaydayModal(true);
+            }}
+          >
+            <Ionicons name="flash" size={13} color="#FFFFFF" />
+            <Text style={styles.paydayBtnText}>Payday</Text>
+          </Pressable>
+          <Pressable
             testID="transfer-btn"
             style={({ pressed }) => [styles.transferBtn, pressed && { transform: [{ scale: 0.95 }] }]}
             onPress={() => {
@@ -306,6 +321,24 @@ export default function Accounts() {
               <Text style={styles.nwSub}>Cards & Loans</Text>
             </View>
           </View>
+
+          {totalLiabilities > 0 && (
+            <Pressable
+              style={styles.freedomCtaBar}
+              onPress={() => {
+                setShowFreedomModal(true);
+                Haptics.selectionAsync().catch(() => {});
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={{ fontSize: 14 }}>🏔️</Text>
+                <Text style={styles.freedomCtaText}>
+                  Debt-Free Countdown & Snowball Simulator
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={14} color={colors.brandPrimary} />
+            </Pressable>
+          )}
         </View>
 
         {/* Compact Quick Utilities Row: Cloud Sync & Wage Setting */}
@@ -784,6 +817,23 @@ export default function Accounts() {
         onClose={() => setSyncModalOpen(false)}
         onDataRestored={load}
       />
+
+      {/* Debt Freedom Countdown Modal */}
+      <DebtFreedomModal
+        visible={showFreedomModal}
+        accounts={accounts}
+        wage={wage}
+        onClose={() => setShowFreedomModal(false)}
+      />
+
+      {/* Payday Auto-Splitter Modal */}
+      <PaydaySplitModal
+        visible={showPaydayModal}
+        accounts={accounts}
+        wage={wage}
+        onClose={() => setShowPaydayModal(false)}
+        onSuccess={load}
+      />
     </SafeAreaView>
   );
 }
@@ -819,6 +869,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
+  paydayBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "#D97706",
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    ...shadow.glow,
+  },
+  paydayBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "800",
+  },
   transferBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -833,6 +898,23 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 12,
     fontWeight: "800",
+  },
+  freedomCtaBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#F0FDF4",
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+    borderRadius: radius.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: spacing.sm,
+  },
+  freedomCtaText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#15803D",
   },
   iconBtn: {
     backgroundColor: colors.brandPrimary,

@@ -36,6 +36,8 @@ const PIE_PALETTE = [
 
 import { AnimatedMascot } from "@/src/components/AnimatedMascot";
 import { CuteAppBackground } from "@/src/components/CuteAppBackground";
+import { TaxReliefModal } from "@/src/components/TaxReliefModal";
+import { MonthlyWrappedModal } from "@/src/components/MonthlyWrappedModal";
 
 export default function Insights() {
   const insets = useSafeAreaInsets();
@@ -61,6 +63,9 @@ export default function Insights() {
   const [loading, setLoading] = useState(false);
   const [insight, setInsight] = useState<{ summary: string; tips: string[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showTaxModal, setShowTaxModal] = useState(false);
+  const [showWrappedModal, setShowWrappedModal] = useState(false);
+  const currentYear = new Date().getFullYear();
 
   const load = useCallback(async () => {
     const [t, w, b] = await Promise.all([getTransactions(), getWageSettings(), getBudgetSettings()]);
@@ -253,6 +258,37 @@ export default function Insights() {
           </View>
         </View>
 
+        {/* Malaysian Tax Relief & Monthly Wrapped Utilities */}
+        <View style={styles.insightUtilitiesRow}>
+          <Pressable
+            style={({ pressed }) => [styles.insightUtilBtn, pressed && { opacity: 0.85 }]}
+            onPress={() => {
+              setShowTaxModal(true);
+              Haptics.selectionAsync().catch(() => {});
+            }}
+          >
+            <Text style={{ fontSize: 16 }}>🇲🇾</Text>
+            <View>
+              <Text style={styles.insightUtilTitle}>LHDN Tax Relief</Text>
+              <Text style={styles.insightUtilSub}>Track {currentYear} quotas</Text>
+            </View>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.insightUtilBtn, pressed && { opacity: 0.85 }]}
+            onPress={() => {
+              setShowWrappedModal(true);
+              Haptics.selectionAsync().catch(() => {});
+            }}
+          >
+            <Text style={{ fontSize: 16 }}>🎁</Text>
+            <View>
+              <Text style={styles.insightUtilTitle}>Month Wrapped</Text>
+              <Text style={styles.insightUtilSub}>Life energy story</Text>
+            </View>
+          </Pressable>
+        </View>
+
         {byCat.length === 0 ? (
           <View style={styles.emptyBox}>
             <Image
@@ -396,6 +432,22 @@ export default function Insights() {
           </>
         )}
       </ScrollView>
+
+      {/* Malaysian Tax Relief Tracker Modal */}
+      <TaxReliefModal
+        visible={showTaxModal}
+        transactions={txns}
+        onClose={() => setShowTaxModal(false)}
+      />
+
+      {/* Monthly Wrapped Story Modal */}
+      <MonthlyWrappedModal
+        visible={showWrappedModal}
+        transactions={txns}
+        wage={wage}
+        selectedMonth={selectedMonth}
+        onClose={() => setShowWrappedModal(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -681,5 +733,32 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 20,
     fontSize: 13,
+  },
+  insightUtilitiesRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  insightUtilBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    ...shadow.soft,
+  },
+  insightUtilTitle: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: colors.onSurface,
+  },
+  insightUtilSub: {
+    fontSize: 10,
+    color: colors.onSurfaceSecondary,
+    marginTop: 1,
   },
 });
