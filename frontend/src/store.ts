@@ -574,6 +574,8 @@ function applyTransactionToAccounts(
   const { amount, type, accountId, toAccountId } = txn;
   if (!amount || amount <= 0) return;
 
+  const nowIso = new Date().toISOString();
+
   if (type === "transfer" && toAccountId) {
     const fromIdx = accs.findIndex((a) => a.id === accountId);
     const toIdx = accs.findIndex((a) => a.id === toAccountId);
@@ -586,6 +588,7 @@ function applyTransactionToAccounts(
       let delta = isFromLiability ? amount : -amount;
       if (reverse) delta = -delta;
       fromAcc.balance = +(fromAcc.balance + delta).toFixed(2);
+      fromAcc.updatedAt = nowIso;
     }
 
     // Inflow to destination account
@@ -596,6 +599,7 @@ function applyTransactionToAccounts(
       let delta = isToLiability ? -amount : amount;
       if (reverse) delta = -delta;
       toAcc.balance = +(toAcc.balance + delta).toFixed(2);
+      toAcc.updatedAt = nowIso;
     }
     return;
   }
@@ -605,6 +609,7 @@ function applyTransactionToAccounts(
   const idx = accs.findIndex((a) => a.id === accountId);
   if (idx >= 0) {
     adjustAccountForTransaction(accs[idx], amount, isIncome, reverse);
+    accs[idx].updatedAt = nowIso;
   }
 }
 

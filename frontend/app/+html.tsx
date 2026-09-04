@@ -9,7 +9,7 @@ export default function Root({ children }: PropsWithChildren) {
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta
           name="viewport"
-          content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover"
+          content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no, viewport-fit=cover"
         />
         <title>DoughTime</title>
 
@@ -30,6 +30,20 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="theme-color" content="#EC4899" />
 
         <ScrollViewStyleReset />
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `
+              /* Prevent iOS Safari auto-zoom on input focus */
+              input, textarea, select {
+                font-size: 16px !important;
+              }
+              html, body {
+                touch-action: manipulation;
+                -webkit-text-size-adjust: 100%;
+              }
+            `,
+          }}
+        />
       </head>
       <body>{children}</body>
     </html>

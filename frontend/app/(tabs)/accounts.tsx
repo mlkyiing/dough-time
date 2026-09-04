@@ -1352,7 +1352,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 12,
     fontWeight: "600",
-    fontSize: 14,
+    fontSize: 16,
     color: colors.onSurface,
   },
   customAddBtn: {

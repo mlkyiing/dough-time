@@ -436,17 +436,13 @@ export function SmartBudgetModal({
 
             {/* Total Spending Ceiling Summary Box */}
             <View style={styles.totalSummaryCard}>
-              <View style={styles.totalSummaryRow}>
-                <View style={{ flex: 1, minWidth: 0, paddingRight: 10 }}>
-                  <Text style={styles.totalSummaryLabel}>Total Monthly Spending Ceiling</Text>
-                  <Text style={styles.totalSummaryHours}>
-                    Equals {totalHours.toFixed(1)}h ({(totalHours / 8).toFixed(1)} workdays) of life energy
-                  </Text>
-                </View>
-                <View style={{ flexShrink: 0, alignItems: "flex-end" }}>
-                  <Text style={styles.totalSummaryVal}>{rm(totalOverallBudget)}</Text>
-                </View>
+              <View style={styles.totalSummaryTop}>
+                <Text style={styles.totalSummaryLabel}>Total Monthly Spending Ceiling</Text>
+                <Text style={styles.totalSummaryVal}>{rm(totalOverallBudget)}</Text>
               </View>
+              <Text style={styles.totalSummaryHours}>
+                Equals {totalHours.toFixed(1)}h ({(totalHours / 8).toFixed(1)} workdays) of life energy
+              </Text>
             </View>
 
             {/* Category Budgets alignment card */}
@@ -737,32 +733,36 @@ const styles = StyleSheet.create({
   },
   bucketHeader: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     gap: 8,
   },
   bucketTitleWrap: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 8,
     flex: 1,
     minWidth: 0,
+    paddingRight: 4,
   },
   bucketTitle: {
     fontSize: 13,
     fontWeight: "800",
     color: colors.onSurface,
+    flexShrink: 1,
   },
   bucketSub: {
     fontSize: 11,
     color: colors.onSurfaceSecondary,
+    marginTop: 2,
   },
   bucketHoursPill: {
     backgroundColor: "#EFF6FF",
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 3,
     borderRadius: radius.pill,
     flexShrink: 0,
+    alignSelf: "flex-start",
   },
   bucketHoursText: {
     fontSize: 11,
@@ -802,26 +802,29 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.borderStrong,
+    gap: 4,
   },
-  totalSummaryRow: {
+  totalSummaryTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    gap: 12,
   },
   totalSummaryLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "700",
     color: colors.onSurfaceSecondary,
+    flex: 1,
   },
   totalSummaryHours: {
     fontSize: 11,
     color: colors.onSurfaceSecondary,
-    marginTop: 2,
   },
   totalSummaryVal: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "900",
     color: colors.onSurface,
+    textAlign: "right",
   },
   footer: {
     paddingHorizontal: spacing.lg,

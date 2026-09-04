@@ -411,7 +411,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    fontSize: 13,
+    fontSize: 16,
     color: colors.onSurface,
   },
   priceInputWrap: {

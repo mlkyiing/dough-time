@@ -18,6 +18,7 @@ import { Account, WageSettings, isLiabilityAccount } from "@/src/types";
 import { amountToWorkHours, rm, todayISO } from "@/src/format";
 import { transferFunds } from "@/src/store";
 import { AnimatedMascot } from "./AnimatedMascot";
+import { AccountSelectDropdown } from "./AccountSelectDropdown";
 
 interface Props {
   visible: boolean;
@@ -203,38 +204,19 @@ export function TransferModal({
             contentContainerStyle={{ paddingBottom: 20 }}
           >
             {/* FROM ACCOUNT SELECTOR */}
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>FROM (Source Account)</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                {sourceCandidates.map((acc) => {
-                  const isSel = fromId === acc.id;
-                  return (
-                    <Pressable
-                      key={acc.id}
-                      onPress={() => {
-                        Haptics.selectionAsync().catch(() => {});
-                        setFromId(acc.id);
-                        if (toId === acc.id) {
-                          const nextTo = accounts.find((a) => a.id !== acc.id)?.id || "";
-                          setToId(nextTo);
-                        }
-                      }}
-                      style={[
-                        styles.accPill,
-                        isSel && styles.accPillActive,
-                        { borderLeftColor: acc.color, borderLeftWidth: 3 },
-                      ]}
-                    >
-                      <Text style={{ fontSize: 16 }}>{acc.emoji}</Text>
-                      <View>
-                        <Text style={[styles.accPillName, isSel && styles.accPillNameActive]}>{acc.name}</Text>
-                        <Text style={[styles.accPillBal, isSel && styles.accPillBalActive]}>{rm(acc.balance)}</Text>
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </View>
+            <AccountSelectDropdown
+              label="FROM (Source Account)"
+              value={fromId}
+              onChange={(id) => {
+                setFromId(id);
+                if (toId === id) {
+                  const nextTo = accounts.find((a) => a.id !== id)?.id || "";
+                  setToId(nextTo);
+                }
+              }}
+              accounts={sourceCandidates}
+              modalTitle="Select Source Account"
+            />
 
             {/* Transfer Direction Indicator */}
             <View style={styles.directionDivider}>
@@ -246,42 +228,15 @@ export function TransferModal({
             </View>
 
             {/* TO ACCOUNT SELECTOR */}
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>
-                {isLoanOrDebt ? "TO (Repaying Loan / Debt)" : "TO (Destination Account)"}
-              </Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                {destinationCandidates.map((acc) => {
-                  const isSel = toId === acc.id;
-                  const isAccDebt = isLiabilityAccount(acc.type);
-                  return (
-                    <Pressable
-                      key={acc.id}
-                      onPress={() => handleSelectToAccount(acc.id)}
-                      style={[
-                        styles.accPill,
-                        isSel && (isAccDebt ? styles.accPillActiveDebt : styles.accPillActive),
-                        { borderLeftColor: acc.color, borderLeftWidth: 3 },
-                      ]}
-                    >
-                      <Text style={{ fontSize: 16 }}>{acc.emoji}</Text>
-                      <View>
-                        <Text style={[styles.accPillName, isSel && styles.accPillNameActive]}>{acc.name}</Text>
-                        <Text
-                          style={[
-                            styles.accPillBal,
-                            isAccDebt && { color: isSel ? "#FFFFFF" : "#EF4444" },
-                            isSel && styles.accPillBalActive,
-                          ]}
-                        >
-                          {isAccDebt ? `Owed ${rm(acc.balance)}` : rm(acc.balance)}
-                        </Text>
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </View>
+            <AccountSelectDropdown
+              label={isLoanOrDebt ? "TO (Repaying Loan / Debt)" : "TO (Destination Account)"}
+              value={toId}
+              onChange={handleSelectToAccount}
+              accounts={destinationCandidates}
+              excludeId={fromId}
+              modalTitle={isLoanOrDebt ? "Select Loan / Debt to Repay" : "Select Destination Account"}
+              isDebtTarget={isLoanOrDebt}
+            />
 
             {/* AMOUNT INPUT */}
             <View style={styles.inputGroup}>
@@ -626,7 +581,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
     fontWeight: "600",
-    fontSize: 14,
+    fontSize: 16,
     color: colors.onSurface,
   },
   confirmBtn: {

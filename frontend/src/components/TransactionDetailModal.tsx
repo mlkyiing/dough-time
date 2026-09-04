@@ -775,7 +775,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
     fontWeight: "700",
-    fontSize: 15,
+    fontSize: 16,
     color: colors.onSurface,
   },
   catChip: {

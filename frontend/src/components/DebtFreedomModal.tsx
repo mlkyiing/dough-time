@@ -329,7 +329,7 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   extraInput: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "800",
     color: colors.onSurface,
     minWidth: 60,

@@ -370,7 +370,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    fontSize: 13,
+    fontSize: 16,
     color: colors.onSurface,
   },
   saveAddBtn: {

@@ -748,15 +748,27 @@ async def sync_merge(req: VaultMergeRequest):
                 else:
                     # Apply any newly added client transactions to the cloud balance
                     for c_txn in new_client_txns:
-                        if c_txn.get("accountId") == aid:
-                            amt = float(c_txn.get("amount") or 0)
-                            is_income = (c_txn.get("type") == "income")
-                            acc_type = c_acc.get("type", "bank")
-                            is_liability = acc_type in ["credit_card", "loan"]
+                        txn_type = c_txn.get("type")
+                        amt = float(c_txn.get("amount") or 0)
+                        acc_type = c_acc.get("type", "bank")
+                        is_liability = acc_type in ["credit_card", "loan"]
+                        
+                        if txn_type == "transfer":
+                            if c_txn.get("accountId") == aid:
+                                # Outflow from source account: reduces asset, increases liability debt
+                                c_acc["balance"] = round(c_acc.get("balance", 0) + (amt if is_liability else -amt), 2)
+                                c_acc["updatedAt"] = now_iso
+                            elif c_txn.get("toAccountId") == aid:
+                                # Inflow to destination account: increases asset, reduces liability debt
+                                c_acc["balance"] = round(c_acc.get("balance", 0) + (-amt if is_liability else amt), 2)
+                                c_acc["updatedAt"] = now_iso
+                        elif c_txn.get("accountId") == aid:
+                            is_income = (txn_type == "income")
                             if is_income:
                                 c_acc["balance"] = round(c_acc.get("balance", 0) + (-amt if is_liability else amt), 2)
                             else:
                                 c_acc["balance"] = round(c_acc.get("balance", 0) + (amt if is_liability else -amt), 2)
+                            c_acc["updatedAt"] = now_iso
                 cloud_accs[aid] = c_acc
             else:
                 # Brand new account created on client
@@ -862,6 +874,7 @@ async def shortcut_quick_add(
             for acc in accounts:
                 if acc.get("id") == target_acc_id:
                     acc["balance"] = round(acc.get("balance", 0) - float(amount), 2)
+                    acc["updatedAt"] = datetime.now(timezone.utc).isoformat()
                     break
                     
         hourly_rate = float(wage_settings.get("hourlyRate") or 25.96)

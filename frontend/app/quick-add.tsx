@@ -16,6 +16,7 @@ import { colors, radius, shadow, spacing } from "@/src/theme";
 import { addTransaction, getAccounts, getWageSettings, transferFunds } from "@/src/store";
 import { Account, BudgetBucket, WageSettings, isLiabilityAccount } from "@/src/types";
 import { CATEGORIES, INCOME_CATEGORIES } from "@/src/constants";
+import { AccountSelectDropdown } from "@/src/components/AccountSelectDropdown";
 import {
   amountToWorkHours,
   formatTimeCost,
@@ -316,78 +317,45 @@ export default function QuickAddModal() {
         {isTransfer ? (
           /* TRANSFER SELECTION */
           <View style={styles.transferConfigBox}>
-            <View style={styles.transferAccRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.fieldLabel}>FROM ACCOUNT</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                  {accounts
-                    .filter((a) => !isLiabilityAccount(a.type) || a.balance > 0)
-                    .map((acc) => {
-                      const isSel = accountId === acc.id;
-                      return (
-                        <Pressable
-                          key={acc.id}
-                          onPress={() => {
-                            Haptics.selectionAsync().catch(() => {});
-                            setAccountId(acc.id);
-                          }}
-                          style={[
-                            styles.compactAccPill,
-                            isSel && styles.compactAccPillActive,
-                            { borderLeftColor: acc.color, borderLeftWidth: 3 },
-                          ]}
-                        >
-                          <Text style={{ fontSize: 13 }}>{acc.emoji}</Text>
-                          <Text style={[styles.compactAccText, isSel && styles.compactAccTextActive]}>
-                            {acc.name.split(" ")[0]} ({rm(acc.balance)})
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                </ScrollView>
+            <View style={styles.transferDropdownWrap}>
+              <AccountSelectDropdown
+                label="From Account"
+                value={accountId}
+                onChange={(id) => {
+                  setAccountId(id);
+                  if (toAccountId === id) {
+                    const nextTo = accounts.find((a) => a.id !== id)?.id || "";
+                    setToAccountId(nextTo);
+                  }
+                }}
+                accounts={accounts.filter((a) => !isLiabilityAccount(a.type) || a.balance > 0)}
+                modalTitle="Select Source Account"
+              />
+
+              <View style={styles.transferDividerRow}>
+                <View style={styles.transferDividerLine} />
+                <View style={styles.transferDividerBadge}>
+                  <Ionicons name="arrow-down" size={14} color={colors.brandPrimary} />
+                </View>
+                <View style={styles.transferDividerLine} />
               </View>
 
-              <View style={styles.transferArrowWrap}>
-                <Ionicons name="arrow-forward" size={16} color={colors.brandPrimary} />
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <Text style={styles.fieldLabel}>TO ACCOUNT</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                  {accounts
-                    .filter((a) => a.id !== accountId)
-                    .map((acc) => {
-                      const isSel = toAccountId === acc.id;
-                      const isDebt = isLiabilityAccount(acc.type);
-                      return (
-                        <Pressable
-                          key={acc.id}
-                          onPress={() => {
-                            Haptics.selectionAsync().catch(() => {});
-                            setToAccountId(acc.id);
-                          }}
-                          style={[
-                            styles.compactAccPill,
-                            isSel && (isDebt ? styles.compactAccPillDebt : styles.compactAccPillActive),
-                            { borderLeftColor: acc.color, borderLeftWidth: 3 },
-                          ]}
-                        >
-                          <Text style={{ fontSize: 13 }}>{acc.emoji}</Text>
-                          <Text style={[styles.compactAccText, isSel && styles.compactAccTextActive]}>
-                            {acc.name.split(" ")[0]} {isDebt ? `(-${rm(acc.balance)})` : `(${rm(acc.balance)})`}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                </ScrollView>
-              </View>
+              <AccountSelectDropdown
+                label={isToLoanOrDebt ? "To (Repaying Loan / Debt)" : "To Account"}
+                value={toAccountId}
+                onChange={setToAccountId}
+                accounts={accounts}
+                excludeId={accountId}
+                modalTitle={isToLoanOrDebt ? "Select Loan / Debt to Repay" : "Select Destination Account"}
+                isDebtTarget={isToLoanOrDebt}
+              />
             </View>
 
             {/* Note input for transfer */}
             <TextInput
               value={note}
               onChangeText={setNote}
-              placeholder={isToLoanOrDebt ? "Memo (e.g. Monthly Car Loan Repayment)" : "Note / Transfer Memo"}
+              placeholder={isToLoanOrDebt ? "Memo (e.g. Monthly Car Loan Repayment)" : "Note / Transfer Memo (optional)"}
               placeholderTextColor={colors.onSurfaceSecondary}
               style={styles.compactInput}
             />
@@ -422,32 +390,13 @@ export default function QuickAddModal() {
             </View>
 
             {/* Account selection */}
-            <View style={{ marginBottom: 6 }}>
-              <Text style={styles.fieldLabel}>{isIncome ? "RECEIVING ACCOUNT" : "PAID VIA ACCOUNT"}</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                {accounts.map((acc) => {
-                  const isSel = accountId === acc.id;
-                  return (
-                    <Pressable
-                      key={acc.id}
-                      onPress={() => {
-                        Haptics.selectionAsync().catch(() => {});
-                        setAccountId(acc.id);
-                      }}
-                      style={[
-                        styles.accChip,
-                        isSel && (isIncome ? styles.accChipIncomeActive : styles.accChipActive),
-                        { borderLeftColor: acc.color, borderLeftWidth: 3 },
-                      ]}
-                    >
-                      <Text style={{ fontSize: 13 }}>{acc.emoji}</Text>
-                      <Text style={[styles.accChipName, isSel && styles.accChipNameActive]}>{acc.name}</Text>
-                      <Text style={[styles.accChipBal, isSel && styles.accChipBalActive]}>{rm(acc.balance)}</Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </View>
+            <AccountSelectDropdown
+              label={isIncome ? "Receiving Account" : "Paid Via Account"}
+              value={accountId}
+              onChange={setAccountId}
+              accounts={accounts}
+              modalTitle={isIncome ? "Select Receiving Account" : "Select Payment Account"}
+            />
 
             {/* Compact Merchant & Note Row */}
             <View style={styles.inputsRow}>
@@ -694,25 +643,43 @@ const styles = StyleSheet.create({
   },
   compactInput: {
     backgroundColor: colors.surfaceSecondary,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    fontSize: 12,
+    borderWidth: 1.5,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
     fontWeight: "600",
     color: colors.onSurface,
   },
   transferConfigBox: {
-    gap: 6,
+    gap: 8,
+    marginVertical: 4,
   },
-  transferAccRow: {
+  transferDropdownWrap: {
+    gap: 4,
+  },
+  transferDividerRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    justifyContent: "center",
+    marginVertical: -2,
+    gap: 8,
   },
-  transferArrowWrap: {
-    paddingTop: 14,
+  transferDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  transferDividerBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#FDF2F8",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.brandPrimary,
   },
   compactAccPill: {
     flexDirection: "row",

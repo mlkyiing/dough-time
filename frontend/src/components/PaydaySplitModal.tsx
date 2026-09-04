@@ -17,6 +17,7 @@ import { Account, PaydayAllocationItem, PaydayPlan, WageSettings, isAssetAccount
 import { amountToWorkHours, rm, todayISO } from "@/src/format";
 import { AnimatedMascot } from "./AnimatedMascot";
 import { executePaydayPlan, getPaydayPlan, setPaydayPlan } from "@/src/store";
+import { AccountSelectDropdown } from "./AccountSelectDropdown";
 
 interface Props {
   visible: boolean;
@@ -260,25 +261,13 @@ export function PaydaySplitModal({ visible, accounts, wage, onClose, onSuccess }
 
               {/* Source Account Selector */}
               <View style={{ marginTop: spacing.sm }}>
-                <Text style={styles.inputSubLabel}>Salary Deposit Account:</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginTop: 4 }}>
-                  {accounts.filter(isAssetAccount).map((a) => {
-                    const isSel = a.id === sourceAccId;
-                    return (
-                      <Pressable
-                        key={a.id}
-                        onPress={() => {
-                          setSourceAccId(a.id);
-                          Haptics.selectionAsync().catch(() => {});
-                        }}
-                        style={[styles.accountChip, isSel && styles.accountChipActive]}
-                      >
-                        <Text style={{ fontSize: 14 }}>{a.emoji}</Text>
-                        <Text style={[styles.accountChipText, isSel && styles.accountChipTextActive]}>{a.name}</Text>
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
+                <AccountSelectDropdown
+                  label="Salary Deposit Account"
+                  value={sourceAccId}
+                  onChange={setSourceAccId}
+                  accounts={accounts.filter(isAssetAccount)}
+                  modalTitle="Select Salary Deposit Account"
+                />
               </View>
             </View>
 
@@ -596,9 +585,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.sm,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    fontSize: 13,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 16,
     color: colors.onSurface,
   },
   typeBtn: {
