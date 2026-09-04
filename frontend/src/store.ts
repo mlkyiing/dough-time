@@ -544,6 +544,25 @@ export async function deleteAccount(idToRemove: string) {
 export async function getTransactions(): Promise<Transaction[]> {
   const raw = await AsyncStorage.getItem(K_TXNS);
   const list: Transaction[] = raw ? JSON.parse(raw) : [];
+
+  // Auto-heal legacy savings/travel transactions that were previously misclassified as comfort/subscriptions
+  let healed = false;
+  for (const t of list) {
+    const isTravelOrSavings =
+      t.merchant?.toLowerCase().includes("travel") ||
+      t.note?.toLowerCase().includes("travel") ||
+      t.category?.toLowerCase().includes("travel");
+    if (isTravelOrSavings && (t.bucket === "comfort" || t.category === "Subscriptions" || !t.bucket)) {
+      t.bucket = "savings";
+      t.category = "Savings";
+      healed = true;
+    }
+  }
+  if (healed) {
+    await AsyncStorage.setItem(K_TXNS, JSON.stringify(list));
+    await touchModified();
+  }
+
   return list.sort((a, b) => (a.date < b.date ? 1 : -1));
 }
 
