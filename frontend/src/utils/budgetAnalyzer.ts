@@ -20,6 +20,10 @@ export const COMFORT_CATEGORIES: string[] = [
 
 export const SAVINGS_CATEGORIES: string[] = [
   "Investment",
+  "Savings",
+  "Saving",
+  "Tabung",
+  "Stash",
 ];
 
 /**

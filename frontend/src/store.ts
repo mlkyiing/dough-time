@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getBackendUrl } from "./constants";
 import {
   Account,
+  BudgetBucket,
   BudgetSettings,
   isLiabilityAccount,
   SyncSession,
@@ -158,11 +159,12 @@ export async function initOrGetSyncSession(): Promise<SyncSession> {
  */
 export async function pushCloudBackup(): Promise<{ success: boolean; message?: string; session?: SyncSession }> {
   const session = await initOrGetSyncSession();
-  const [accounts, transactions, wage, budget] = await Promise.all([
+  const [accounts, transactions, wage, budget, recurring] = await Promise.all([
     getAccounts(),
     getTransactions(),
     getWageSettings(),
     getBudgetSettings(),
+    getRecurringTxns(),
   ]);
 
   const nowIso = new Date().toISOString();
@@ -180,6 +182,7 @@ export async function pushCloudBackup(): Promise<{ success: boolean; message?: s
         transactions,
         wage_settings: wage,
         budget_settings: budget,
+        recurring_txns: recurring,
         last_modified: nowIso,
       }),
     });
@@ -231,6 +234,7 @@ export async function pullCloudRestore(
     if (data.transactions) await setTransactions(data.transactions, false);
     if (data.wage_settings) await setWageSettings(data.wage_settings, false);
     if (data.budget_settings) await setBudgetSettings(data.budget_settings, false);
+    if (data.recurring_txns) await setRecurringTxns(data.recurring_txns);
     await AsyncStorage.setItem(K_SEED, "1");
 
     const newSession: SyncSession = {
@@ -296,13 +300,14 @@ async function clearDeletedAccountIds(ids: string[]) {
  */
 export async function mergeWithCloud(): Promise<{ success: boolean; message?: string }> {
   const session = await initOrGetSyncSession();
-  const [accounts, transactions, wage, budget, deletedTxnIds, deletedAccIds] = await Promise.all([
+  const [accounts, transactions, wage, budget, deletedTxnIds, deletedAccIds, recurring] = await Promise.all([
     getAccounts(),
     getTransactions(),
     getWageSettings(),
     getBudgetSettings(),
     getDeletedTxnIds(),
     getDeletedAccountIds(),
+    getRecurringTxns(),
   ]);
 
   notifySync("syncing", session);
@@ -321,6 +326,7 @@ export async function mergeWithCloud(): Promise<{ success: boolean; message?: st
         deleted_account_ids: deletedAccIds,
         wage_settings: wage,
         budget_settings: budget,
+        recurring_txns: recurring,
         last_modified: new Date().toISOString(),
       }),
     });
@@ -335,6 +341,7 @@ export async function mergeWithCloud(): Promise<{ success: boolean; message?: st
     if (data.transactions) await setTransactions(data.transactions, false);
     if (data.wage_settings) await setWageSettings(data.wage_settings, false);
     if (data.budget_settings) await setBudgetSettings(data.budget_settings, false);
+    if (data.recurring_txns) await setRecurringTxns(data.recurring_txns);
 
     // Clear processed tombstones
     if (deletedTxnIds.length > 0) await clearDeletedTxnIds(deletedTxnIds);
@@ -639,8 +646,10 @@ export async function transferFunds(params: {
   note?: string;
   category?: string;
   date?: string;
+  recurringId?: string;
+  bucket?: BudgetBucket;
 }): Promise<Transaction> {
-  const { fromAccountId, toAccountId, amount, note, category, date } = params;
+  const { fromAccountId, toAccountId, amount, note, category, date, recurringId, bucket } = params;
   const accs = await getAccounts();
   const toAcc = accs.find((a) => a.id === toAccountId);
 
@@ -657,6 +666,8 @@ export async function transferFunds(params: {
     note: defaultNote,
     merchant: toAcc ? toAcc.name : undefined,
     date: date || new Date().toISOString().slice(0, 10),
+    recurringId,
+    bucket,
   });
 }
 
@@ -718,11 +729,12 @@ export async function deleteTransaction(idToRemove: string) {
 
 export async function exportBackupJson(): Promise<string> {
   const session = await getSyncSession();
-  const [accounts, transactions, wage, budget] = await Promise.all([
+  const [accounts, transactions, wage, budget, recurring] = await Promise.all([
     getAccounts(),
     getTransactions(),
     getWageSettings(),
     getBudgetSettings(),
+    getRecurringTxns(),
   ]);
 
   const snapshot: VaultSnapshot = {
@@ -732,6 +744,7 @@ export async function exportBackupJson(): Promise<string> {
     transactions,
     wageSettings: wage,
     budgetSettings: budget,
+    recurringTxns: recurring,
     lastModified: new Date().toISOString(),
     appVersion: "1.0.0",
   };
@@ -750,6 +763,7 @@ export async function importBackupJson(rawJson: string): Promise<{ success: bool
     if (data.transactions) await setTransactions(data.transactions, false);
     if (data.wageSettings) await setWageSettings(data.wageSettings, false);
     if (data.budgetSettings) await setBudgetSettings(data.budgetSettings, false);
+    if (data.recurringTxns) await setRecurringTxns(data.recurringTxns);
     await AsyncStorage.setItem(K_SEED, "1");
 
     if (data.syncCode) {
@@ -946,9 +960,59 @@ export async function addRecurringTxn(item: Omit<RecurringTxn, "id">): Promise<R
   return created;
 }
 
-export async function deleteRecurringTxn(idToRemove: string) {
+export async function updateRecurringTxn(updated: RecurringTxn): Promise<void> {
+  const list = await getRecurringTxns();
+  const idx = list.findIndex((r) => r.id === updated.id);
+  if (idx >= 0) {
+    list[idx] = updated;
+    await setRecurringTxns(list);
+  }
+}
+
+export async function deleteRecurringTxn(idToRemove: string, revertLoggedMonth = false) {
+  if (revertLoggedMonth) {
+    await revertRecurringLog(idToRemove);
+  }
   const list = (await getRecurringTxns()).filter((r) => r.id !== idToRemove);
   await setRecurringTxns(list);
+}
+
+export async function revertRecurringLog(
+  recurringId: string,
+  month?: string
+): Promise<{ success: boolean; message: string }> {
+  const recurringList = await getRecurringTxns();
+  const rule = recurringList.find((r) => r.id === recurringId);
+  if (!rule) {
+    return { success: false, message: "Recurring rule not found" };
+  }
+
+  const targetMonth = month || rule.lastLoggedMonth;
+
+  // Find transaction logged for this recurring rule and month
+  const txns = await getTransactions();
+  const targetTxn = txns.find(
+    (t) =>
+      (t.recurringId === recurringId ||
+        t.note?.includes(`[Recurring: ${rule.name}]`) ||
+        (t.note?.toLowerCase().includes("recurring") && t.note?.includes(rule.name))) &&
+      (!targetMonth || t.date?.startsWith(targetMonth))
+  );
+
+  if (targetTxn) {
+    await deleteTransaction(targetTxn.id);
+  }
+
+  // Clear rule's lastLoggedMonth
+  rule.lastLoggedMonth = undefined;
+  await updateRecurringTxn(rule);
+
+  return {
+    success: true,
+    message: targetTxn
+      ? `Reverted "${rule.name}" transaction for ${targetMonth || "month"} & restored balance!`
+      : `Reset status for "${rule.name}"!`,
+  };
 }
 
 // ----------------------------------------------------

@@ -156,9 +156,16 @@ export function SwipeableTxnRow({
           </View>
 
           <View style={{ flex: 1, justifyContent: "center" }}>
-            <Text style={styles.cardTitle} numberOfLines={1}>
-              {displayTitle}
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+              <Text style={[styles.cardTitle, { flexShrink: 1 }]} numberOfLines={1}>
+                {displayTitle}
+              </Text>
+              {(t.recurringId || t.note?.includes("[Recurring") || t.note?.toLowerCase().includes("recurring")) && (
+                <View style={{ backgroundColor: "#F3E8FF", paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
+                  <Text style={{ fontSize: 9.5, fontWeight: "800", color: "#7E22CE" }}>🔁 REC</Text>
+                </View>
+              )}
+            </View>
             <Text style={styles.cardSub} numberOfLines={1}>
               {displaySubtitle}
             </Text>

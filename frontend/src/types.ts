@@ -40,6 +40,7 @@ export type Transaction = {
   date: string; // ISO
   createdAt: string;
   taxReliefCode?: string;
+  recurringId?: string; // Links transaction to its parent recurring rule
 };
 
 export type WageSettings = {
@@ -100,13 +101,17 @@ export type PaydayPlan = {
 };
 
 export type RecurringFrequency = "monthly" | "weekly" | "yearly";
+export type RecurringType = "expense" | "savings" | "transfer";
 
 export type RecurringTxn = {
   id: string;
   name: string;
   amount: number;
+  type?: RecurringType; // "expense" | "savings" | "transfer"
+  bucket?: BudgetBucket; // "needs" | "comfort" | "savings"
   category: string;
-  accountId: string;
+  accountId: string; // Source payment or funding account
+  toAccountId?: string; // Destination account for savings or transfer
   frequency: RecurringFrequency;
   dayOfMonth: number;
   note?: string;
@@ -160,6 +165,7 @@ export type VaultSnapshot = {
   transactions: Transaction[];
   wageSettings: WageSettings;
   budgetSettings: BudgetSettings;
+  recurringTxns?: RecurringTxn[];
   lastModified: string;
   appVersion?: string;
 };

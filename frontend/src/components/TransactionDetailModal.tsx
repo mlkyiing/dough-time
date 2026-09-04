@@ -475,6 +475,19 @@ export function TransactionDetailModal({
                     </View>
                   </>
                 )}
+
+                {(t.recurringId || t.note?.includes("[Recurring") || t.note?.toLowerCase().includes("recurring")) && (
+                  <>
+                    <View style={styles.divider} />
+                    <View style={styles.detailItem}>
+                      <Text style={styles.detailLabel}>Origin</Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#F3E8FF", paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.pill }}>
+                        <Ionicons name="repeat" size={13} color="#7E22CE" />
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: "#7E22CE" }}>🔁 Recurring Commitment</Text>
+                      </View>
+                    </View>
+                  </>
+                )}
               </View>
 
               {/* Action Buttons */}

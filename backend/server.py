@@ -114,6 +114,7 @@ class VaultPushRequest(BaseModel):
     transactions: List[dict] = []
     wage_settings: Optional[dict] = None
     budget_settings: Optional[dict] = None
+    recurring_txns: List[dict] = []
     last_modified: Optional[str] = None
 
 class VaultMergeRequest(BaseModel):
@@ -125,6 +126,7 @@ class VaultMergeRequest(BaseModel):
     deleted_account_ids: List[str] = []
     wage_settings: Optional[dict] = None
     budget_settings: Optional[dict] = None
+    recurring_txns: List[dict] = []
     last_modified: Optional[str] = None
 
 class VaultDataResponse(BaseModel):
@@ -135,6 +137,7 @@ class VaultDataResponse(BaseModel):
     transactions: List[dict] = []
     wage_settings: Optional[dict] = None
     budget_settings: Optional[dict] = None
+    recurring_txns: List[dict] = []
     last_modified: str
     message: Optional[str] = None
 
@@ -595,6 +598,7 @@ async def sync_push(req: VaultPushRequest):
             "transactions": req.transactions,
             "wage_settings": req.wage_settings,
             "budget_settings": req.budget_settings,
+            "recurring_txns": req.recurring_txns,
             "last_modified": now_iso,
         }
         
@@ -619,6 +623,7 @@ async def sync_push(req: VaultPushRequest):
             transactions=req.transactions,
             wage_settings=req.wage_settings,
             budget_settings=req.budget_settings,
+            recurring_txns=req.recurring_txns,
             last_modified=now_iso,
             message="Cloud backup successful"
         )
@@ -647,6 +652,7 @@ async def sync_pull(sync_key: str):
             transactions=data.get("transactions", []),
             wage_settings=data.get("wage_settings"),
             budget_settings=data.get("budget_settings"),
+            recurring_txns=data.get("recurring_txns", []),
             last_modified=last_modified,
             message="Cloud restore successful"
         )
@@ -671,6 +677,7 @@ async def sync_merge(req: VaultMergeRequest):
                 "transactions": req.transactions,
                 "wage_settings": req.wage_settings,
                 "budget_settings": req.budget_settings,
+                "recurring_txns": req.recurring_txns,
                 "last_modified": now_iso,
             }
             cur = conn.cursor()
@@ -687,6 +694,7 @@ async def sync_merge(req: VaultMergeRequest):
                 transactions=req.transactions,
                 wage_settings=req.wage_settings,
                 budget_settings=req.budget_settings,
+                recurring_txns=req.recurring_txns,
                 last_modified=now_iso,
                 message="Cloud vault created and merged"
             )
@@ -778,12 +786,14 @@ async def sync_merge(req: VaultMergeRequest):
         
         merged_wage = req.wage_settings or cloud_data.get("wage_settings")
         merged_budget = req.budget_settings or cloud_data.get("budget_settings")
+        merged_recurring = req.recurring_txns or cloud_data.get("recurring_txns", [])
         
         merged_payload = {
             "accounts": merged_accs,
             "transactions": merged_txns,
             "wage_settings": merged_wage,
             "budget_settings": merged_budget,
+            "recurring_txns": merged_recurring,
             "last_modified": now_iso,
         }
         
@@ -802,6 +812,7 @@ async def sync_merge(req: VaultMergeRequest):
             transactions=merged_txns,
             wage_settings=merged_wage,
             budget_settings=merged_budget,
+            recurring_txns=merged_recurring,
             last_modified=now_iso,
             message="Merged with Cloud vault successfully"
         )

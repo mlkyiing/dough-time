@@ -5,6 +5,7 @@ import {
   FlatList,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,7 +16,16 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { colors, radius, shadow, spacing } from "@/src/theme";
-import { deleteTransaction, getAccounts, getTransactions, getWageSettings, mergeWithCloud, updateTransaction } from "@/src/store";
+import {
+  deleteTransaction,
+  getAccounts,
+  getSyncSession,
+  getTransactions,
+  getWageSettings,
+  mergeWithCloud,
+  pullCloudRestore,
+  updateTransaction,
+} from "@/src/store";
 import { Account, Transaction, WageSettings } from "@/src/types";
 import { CATEGORIES, INCOME_CATEGORIES, categoryMeta } from "@/src/constants";
 import { amountToWorkHours, formatMonthDisplay, monthKey, rm, todayISO } from "@/src/format";
@@ -41,6 +51,8 @@ export default function Transactions() {
   const [typeFilter, setTypeFilter] = useState<"all" | "expense" | "income" | "transfer">("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
   const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
 
   const load = useCallback(async () => {
     const [t, a, w] = await Promise.all([
@@ -52,6 +64,37 @@ export default function Transactions() {
     setAccounts(a);
     setWage(w);
   }, []);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    Haptics.selectionAsync().catch(() => {});
+    try {
+      await mergeWithCloud();
+    } catch {}
+    await load();
+    setRefreshing(false);
+  };
+
+  const handleSyncCloud = async () => {
+    setSyncLoading(true);
+    Haptics.selectionAsync().catch(() => {});
+    try {
+      const session = await getSyncSession();
+      const code = session?.syncCode || "DT-BVK-EGQ";
+      const res = await pullCloudRestore(code);
+      if (res.success) {
+        await load();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        Alert.alert("Cloud Vault Restored! ☁️", res.message || "Synced successfully.");
+      } else {
+        Alert.alert("Sync Issue", res.message || "Could not restore cloud vault.");
+      }
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Sync failed.");
+    } finally {
+      setSyncLoading(false);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -296,8 +339,12 @@ export default function Transactions() {
             setCategoryFilter("All");
           }}
         >
-          <Text style={[styles.typeSegmentText, typeFilter === "all" && styles.typeSegmentTextActive]}>
-            All ({monthTxns.length})
+          <Text
+            style={[styles.typeSegmentText, typeFilter === "all" && styles.typeSegmentTextActive]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            All · {monthTxns.length}
           </Text>
         </Pressable>
         <Pressable
@@ -308,8 +355,12 @@ export default function Transactions() {
             setCategoryFilter("All");
           }}
         >
-          <Text style={[styles.typeSegmentText, typeFilter === "expense" && styles.typeSegmentTextActive]}>
-            💸 Expenses ({monthExpensesCount})
+          <Text
+            style={[styles.typeSegmentText, typeFilter === "expense" && styles.typeSegmentTextActive]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            Expenses · {monthExpensesCount}
           </Text>
         </Pressable>
         <Pressable
@@ -320,8 +371,12 @@ export default function Transactions() {
             setCategoryFilter("All");
           }}
         >
-          <Text style={[styles.typeSegmentText, typeFilter === "income" && styles.typeSegmentTextActive]}>
-            💰 Income ({monthIncomeCount})
+          <Text
+            style={[styles.typeSegmentText, typeFilter === "income" && styles.typeSegmentTextActive]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            Income · {monthIncomeCount}
           </Text>
         </Pressable>
         <Pressable
@@ -332,8 +387,12 @@ export default function Transactions() {
             setCategoryFilter("All");
           }}
         >
-          <Text style={[styles.typeSegmentText, typeFilter === "transfer" && styles.typeSegmentTextActive]}>
-            🔁 Transfers ({monthTransfersCount})
+          <Text
+            style={[styles.typeSegmentText, typeFilter === "transfer" && styles.typeSegmentTextActive]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            Transfers · {monthTransfersCount}
           </Text>
         </Pressable>
       </View>
@@ -387,11 +446,19 @@ export default function Transactions() {
         keyExtractor={(t) => t.id}
         contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.brandPrimary}
+            colors={[colors.brandPrimary]}
+          />
+        }
         ListEmptyComponent={
           <View style={styles.emptyBox}>
             <Image
               source={require("@/assets/mascot_coin.jpg")}
-              style={{ width: 90, height: 90, marginBottom: 12 }}
+              style={{ width: 84, height: 84, marginBottom: 10 }}
               contentFit="contain"
             />
             <Text style={styles.emptyTitle}>No transactions found</Text>
@@ -400,6 +467,33 @@ export default function Transactions() {
                 ? `No activity recorded for ${formatMonthDisplay(selectedMonth)}.`
                 : "Tap + to log an expense or deposit income!"}
             </Text>
+
+            <View style={styles.emptyActionsContainer}>
+              {selectedMonth !== "all" && txns.length > 0 && (
+                <Pressable
+                  style={styles.emptyActionSecondaryBtn}
+                  onPress={() => {
+                    Haptics.selectionAsync().catch(() => {});
+                    setSelectedMonth("all");
+                  }}
+                >
+                  <Ionicons name="calendar-outline" size={15} color={colors.brandPrimary} />
+                  <Text style={styles.emptyActionSecondaryText}>
+                    Show All Months ({txns.length} records)
+                  </Text>
+                </Pressable>
+              )}
+
+              <Pressable
+                style={styles.emptyActionPrimaryBtn}
+                onPress={handleSyncCloud}
+              >
+                <Ionicons name="cloud-download-outline" size={16} color="#FFFFFF" />
+                <Text style={styles.emptyActionPrimaryText}>
+                  {syncLoading ? "Syncing Vault..." : "Sync from Cloud Vault (DT-BVK-EGQ)"}
+                </Text>
+              </Pressable>
+            </View>
           </View>
         }
         renderItem={({ item }) => {
@@ -526,7 +620,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.pill,
     padding: 3,
-    marginHorizontal: spacing.lg,
+    marginHorizontal: 12,
     marginBottom: spacing.sm,
     borderWidth: 1,
     borderColor: colors.borderStrong,
@@ -534,6 +628,7 @@ const styles = StyleSheet.create({
   typeSegmentBtn: {
     flex: 1,
     paddingVertical: 7,
+    paddingHorizontal: 2,
     borderRadius: radius.pill,
     alignItems: "center",
     justifyContent: "center",
@@ -556,7 +651,7 @@ const styles = StyleSheet.create({
   },
   typeSegmentText: {
     fontWeight: "700",
-    fontSize: 12,
+    fontSize: 11.5,
     color: colors.onSurfaceSecondary,
   },
   typeSegmentTextActive: {
@@ -576,7 +671,8 @@ const styles = StyleSheet.create({
   },
   emptyBox: {
     alignItems: "center",
-    paddingVertical: spacing.xxxl,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.lg,
     borderWidth: 1,
@@ -593,5 +689,43 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.onSurfaceSecondary,
     marginTop: 4,
+    textAlign: "center",
+  },
+  emptyActionsContainer: {
+    marginTop: 16,
+    gap: 8,
+    width: "100%",
+  },
+  emptyActionSecondaryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  emptyActionSecondaryText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.brandPrimary,
+  },
+  emptyActionPrimaryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brandPrimary,
+  },
+  emptyActionPrimaryText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#FFFFFF",
   },
 });
