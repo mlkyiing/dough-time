@@ -18,17 +18,21 @@ import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { colors, radius, shadow, spacing } from "@/src/theme";
 import {
+  addSavingsGoal,
   calculateHourlyRate,
   deleteAccount,
+  deleteSavingsGoal,
   getAccounts,
+  getSavingsGoals,
   getWageSettings,
   initOrGetSyncSession,
   newAccountId,
   setWageSettings,
   subscribeSyncStatus,
+  updateSavingsGoal,
   upsertAccount,
 } from "@/src/store";
-import { Account, AccountType, isAssetAccount, isLiabilityAccount, SyncSession, SyncStatus, WageSettings } from "@/src/types";
+import { Account, AccountType, isAssetAccount, isLiabilityAccount, SavingsGoal, SyncSession, SyncStatus, WageSettings } from "@/src/types";
 import { ACCOUNT_TEMPLATES, AccountTemplate } from "@/src/constants";
 import { amountToWorkHours, rm } from "@/src/format";
 
@@ -44,6 +48,7 @@ import { LoanDueBanner } from "@/src/components/LoanDueBanner";
 import { getDueLoanReminders, DueLoanInfo } from "@/src/utils/notifications";
 import { DebtFreedomModal } from "@/src/components/DebtFreedomModal";
 import { PaydaySplitModal } from "@/src/components/PaydaySplitModal";
+import { SavingsGoalCard } from "@/src/components/SavingsGoalCard";
 
 export default function Accounts() {
   const insets = useSafeAreaInsets();
@@ -75,6 +80,7 @@ export default function Accounts() {
   const [dismissedReminders, setDismissedReminders] = useState<string[]>([]);
   const [showFreedomModal, setShowFreedomModal] = useState(false);
   const [showPaydayModal, setShowPaydayModal] = useState(false);
+  const [savingsGoals, setSavingsGoalsList] = useState<SavingsGoal[]>([]);
 
   // Custom account form fields
   const [customName, setCustomName] = useState("");
@@ -84,13 +90,28 @@ export default function Accounts() {
   const [customRate, setCustomRate] = useState("");
 
   const load = useCallback(async () => {
-    const [a, w, sess] = await Promise.all([getAccounts(), getWageSettings(), initOrGetSyncSession()]);
+    const [a, w, sess, goals] = await Promise.all([
+      getAccounts(),
+      getWageSettings(),
+      initOrGetSyncSession(),
+      getSavingsGoals(),
+    ]);
     setAccounts(a);
     setWage(w);
     setSyncSession(sess);
+    setSavingsGoalsList(goals);
     setTempSalary(String(w.monthlySalary));
     setTempHours(String(w.hoursPerWeek));
   }, []);
+
+  const handleQuickStash = (goal: SavingsGoal, amount: number) => {
+    Haptics.selectionAsync().catch(() => {});
+    const primaryBank = accounts.find((a) => a.type === "bank" || a.type === "ewallet");
+    setTransferFromId(primaryBank?.id);
+    setTransferToId(goal.accountId);
+    setTransferPrefillAmount(amount);
+    setTransferModalOpen(true);
+  };
 
   useFocusEffect(useCallback(() => {
     load();
@@ -211,6 +232,43 @@ export default function Accounts() {
     return accounts;
   }, [accounts, activeFilter]);
 
+  const liquidAccounts = useMemo(
+    () => accounts.filter((a) => a.type === "bank" || a.type === "ewallet" || a.type === "cash"),
+    [accounts]
+  );
+  const creditCardAccounts = useMemo(
+    () => accounts.filter((a) => a.type === "credit_card"),
+    [accounts]
+  );
+  const loanAccounts = useMemo(
+    () => accounts.filter((a) => a.type === "loan"),
+    [accounts]
+  );
+  const savingsAccounts = useMemo(
+    () => accounts.filter((a) => a.type === "fd" || a.type === "investment"),
+    [accounts]
+  );
+
+  const handlePayStatement = (a: Account) => {
+    Haptics.selectionAsync().catch(() => {});
+    const isCleared = Boolean(a.statementCleared);
+    const statementAmt = a.statementBalance !== undefined ? a.statementBalance : a.balance;
+    const prefill = isCleared ? a.balance : statementAmt;
+    setTransferToId(a.id);
+    setTransferPrefillAmount(prefill > 0 ? prefill : undefined);
+    setTransferModalOpen(true);
+  };
+
+  const handleToggleCleared = async (a: Account) => {
+    Haptics.selectionAsync().catch(() => {});
+    const updated: Account = {
+      ...a,
+      statementCleared: !a.statementCleared,
+    };
+    await upsertAccount(updated);
+    load();
+  };
+
   const templateList = useMemo(
     () => ACCOUNT_TEMPLATES.filter((t) => t.category === pickerCategory),
     [pickerCategory]
@@ -221,6 +279,346 @@ export default function Accounts() {
       (r) => !dismissedReminders.includes(r.account.id)
     );
   }, [accounts, wage.hourlyRate, dismissedReminders]);
+
+  const renderAccountCard = (a: Account) => {
+    const isDebt = isLiabilityAccount(a.type);
+    const accHours = amountToWorkHours(a.balance, wage.hourlyRate);
+
+    // 1. CREDIT CARD SPECIALIZED VIEW 💳
+    if (a.type === "credit_card") {
+      const isCleared = Boolean(a.statementCleared);
+      const statementAmt = a.statementBalance !== undefined ? a.statementBalance : a.balance;
+      const unbilledAmt = Math.max(0, a.balance - (isCleared ? 0 : statementAmt));
+      const limit = a.creditLimit || 0;
+      const available = limit > 0 ? Math.max(0, limit - a.balance) : 0;
+      const usagePct = limit > 0 ? Math.min(100, Math.round((a.balance / limit) * 100)) : 0;
+
+      return (
+        <Pressable
+          key={a.id}
+          testID={`account-${a.id}`}
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            setEditingAccount(a);
+          }}
+          onLongPress={() => remove(a)}
+          style={({ pressed }) => [
+            styles.ccCard,
+            { borderTopColor: a.color || colors.brandPrimary },
+            pressed && { opacity: 0.94 },
+          ]}
+        >
+          {/* Card Header */}
+          <View style={styles.ccHeaderRow}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+              <View style={[styles.accountEmojiBox, { backgroundColor: "#F3E8FF" }]}>
+                <Text style={{ fontSize: 24 }}>{a.emoji}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.accountName} numberOfLines={1}>{a.name}</Text>
+                <Text style={styles.accountType}>CREDIT CARD</Text>
+              </View>
+            </View>
+
+            {/* Statement Status Pill */}
+            <Pressable
+              style={[styles.statementStatusPill, isCleared && styles.statementStatusPillCleared]}
+              onPress={(e) => {
+                e.stopPropagation?.();
+                handleToggleCleared(a);
+              }}
+            >
+              <Ionicons
+                name={isCleared ? "checkmark-circle" : "alert-circle"}
+                size={13}
+                color={isCleared ? "#059669" : "#D97706"}
+              />
+              <Text style={[styles.statementStatusText, isCleared && styles.statementStatusTextCleared]}>
+                {isCleared ? "Statement Paid" : a.dueDay ? `Due ${a.dueDay}th` : "Statement Due"}
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* Statement & Outstanding Metric Tiles */}
+          <View style={styles.ccMetricsGrid}>
+            <View style={styles.ccMetricTile}>
+              <Text style={styles.ccMetricLabel}>STATEMENT DUE</Text>
+              <Text style={[styles.ccMetricVal, isCleared && { color: "#059669" }]}>
+                {isCleared ? "RM 0.00" : rm(statementAmt)}
+              </Text>
+              <Text style={styles.ccMetricSub} numberOfLines={1}>
+                {isCleared ? "Cleared ✅" : a.dueDay ? `Pay by ${a.dueDay}th` : "Last bill total"}
+              </Text>
+            </View>
+
+            <View style={styles.ccMetricDivider} />
+
+            <View style={styles.ccMetricTile}>
+              <Text style={styles.ccMetricLabel}>NEXT STATEMENT</Text>
+              <Text style={styles.ccMetricVal}>{rm(unbilledAmt)}</Text>
+              <Text style={styles.ccMetricSub} numberOfLines={1}>
+                {a.statementCutoffDay ? `Cutoff: ${a.statementCutoffDay}th` : "Unbilled spend"}
+              </Text>
+            </View>
+
+            <View style={styles.ccMetricDivider} />
+
+            <View style={[styles.ccMetricTile, { alignItems: "flex-end" }]}>
+              <Text style={styles.ccMetricLabel}>TOTAL OWED</Text>
+              <Text style={[styles.ccMetricVal, { color: "#EF4444" }]}>{rm(a.balance)}</Text>
+              <Text style={styles.ccMetricSub} numberOfLines={1}>{accHours.toFixed(1)}h debt</Text>
+            </View>
+          </View>
+
+          {/* Available Credit Bar */}
+          {limit > 0 && (
+            <View style={styles.ccLimitBarWrap}>
+              <View style={styles.ccLimitInfoRow}>
+                <Text style={styles.ccLimitLabel}>
+                  Available: <Text style={{ fontWeight: "800", color: "#059669" }}>{rm(available)}</Text>
+                </Text>
+                <Text style={styles.ccLimitLabel}>Limit: {rm(limit)} ({usagePct}%)</Text>
+              </View>
+              <View style={styles.ccLimitTrack}>
+                <View
+                  style={[
+                    styles.ccLimitFill,
+                    {
+                      width: `${usagePct}%`,
+                      backgroundColor: usagePct > 80 ? "#EF4444" : usagePct > 50 ? "#F59E0B" : colors.brandPrimary,
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+          )}
+
+          {/* Action Buttons Row */}
+          <View style={styles.ccActionsRow}>
+            <Pressable
+              style={styles.ccPayBtn}
+              onPress={(e) => {
+                e.stopPropagation?.();
+                handlePayStatement(a);
+              }}
+            >
+              <Ionicons name="swap-horizontal" size={13} color="#FFFFFF" />
+              <Text style={styles.ccPayBtnText}>
+                {isCleared ? `Pay Remaining (${rm(unbilledAmt)})` : `Pay Statement (${rm(statementAmt)})`}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.ccTogglePaidBtn}
+              onPress={(e) => {
+                e.stopPropagation?.();
+                handleToggleCleared(a);
+              }}
+            >
+              <Ionicons
+                name={isCleared ? "refresh-outline" : "checkmark-outline"}
+                size={13}
+                color={colors.onSurface}
+              />
+              <Text style={styles.ccTogglePaidText}>
+                {isCleared ? "Mark Unpaid" : "Mark Cleared"}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.ccEditBtn}
+              onPress={(e) => {
+                e.stopPropagation?.();
+                Haptics.selectionAsync().catch(() => {});
+                setEditingAccount(a);
+              }}
+            >
+              <Ionicons name="settings-outline" size={14} color={colors.onSurfaceSecondary} />
+            </Pressable>
+          </View>
+        </Pressable>
+      );
+    }
+
+    // 2. LOAN & FINANCING SPECIALIZED VIEW 🚘
+    if (a.type === "loan") {
+      const principal = a.loanPrincipal || a.balance;
+      const paidOffAmt = Math.max(0, principal - a.balance);
+      const paidOffPct = principal > 0 ? Math.min(100, Math.round((paidOffAmt / principal) * 100)) : 0;
+
+      return (
+        <Pressable
+          key={a.id}
+          testID={`account-${a.id}`}
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            setEditingAccount(a);
+          }}
+          onLongPress={() => remove(a)}
+          style={({ pressed }) => [
+            styles.loanCard,
+            { borderTopColor: "#EA580C" },
+            pressed && { opacity: 0.94 },
+          ]}
+        >
+          {/* Loan Header */}
+          <View style={styles.ccHeaderRow}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+              <View style={[styles.accountEmojiBox, { backgroundColor: "#FFEDD5" }]}>
+                <Text style={{ fontSize: 24 }}>{a.emoji}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.accountName} numberOfLines={1}>{a.name}</Text>
+                <Text style={styles.accountType}>
+                  {a.loanType ? `${a.loanType.toUpperCase()} LOAN` : "LOAN"} · {a.interestRate || 3.5}% interest
+                </Text>
+              </View>
+            </View>
+
+            <View style={{ alignItems: "flex-end" }}>
+              <Text style={[styles.accountBalance, { color: "#EF4444" }]}>-{rm(a.balance)}</Text>
+              <Text style={styles.accountHours}>{accHours.toFixed(1)}h debt</Text>
+            </View>
+          </View>
+
+          {/* Metrics Grid */}
+          <View style={styles.ccMetricsGrid}>
+            <View style={styles.ccMetricTile}>
+              <Text style={styles.ccMetricLabel}>INSTALLMENT</Text>
+              <Text style={styles.ccMetricVal}>
+                {a.monthlyInstallment ? rm(a.monthlyInstallment) : "—"}
+              </Text>
+              <Text style={styles.ccMetricSub} numberOfLines={1}>{a.dueDay ? `Due ${a.dueDay}th of month` : "Monthly due"}</Text>
+            </View>
+
+            <View style={styles.ccMetricDivider} />
+
+            <View style={styles.ccMetricTile}>
+              <Text style={styles.ccMetricLabel}>TENURE REMAINING</Text>
+              <Text style={styles.ccMetricVal}>
+                {a.loanRemainingMonths ? `${a.loanRemainingMonths} mos` : "Active"}
+              </Text>
+              <Text style={styles.ccMetricSub} numberOfLines={1}>
+                {a.loanTenureMonths ? `of ${a.loanTenureMonths} mos total` : "Scheduled"}
+              </Text>
+            </View>
+
+            <View style={styles.ccMetricDivider} />
+
+            <View style={[styles.ccMetricTile, { alignItems: "flex-end" }]}>
+              <Text style={styles.ccMetricLabel}>ORIGINAL PRINCIPAL</Text>
+              <Text style={styles.ccMetricVal}>{a.loanPrincipal ? rm(a.loanPrincipal) : rm(a.balance)}</Text>
+              <Text style={styles.ccMetricSub} numberOfLines={1}>{paidOffPct}% repaid</Text>
+            </View>
+          </View>
+
+          {/* Paid off Progress Bar */}
+          {a.loanPrincipal && a.loanPrincipal > 0 && (
+            <View style={styles.ccLimitBarWrap}>
+              <View style={styles.ccLimitInfoRow}>
+                <Text style={styles.ccLimitLabel}>
+                  Repaid: <Text style={{ fontWeight: "800", color: "#059669" }}>{rm(paidOffAmt)} ({paidOffPct}%)</Text>
+                </Text>
+                <Text style={styles.ccLimitLabel}>Remaining: {rm(a.balance)}</Text>
+              </View>
+              <View style={styles.ccLimitTrack}>
+                <View
+                  style={[
+                    styles.ccLimitFill,
+                    { width: `${paidOffPct}%`, backgroundColor: "#10B981" },
+                  ]}
+                />
+              </View>
+            </View>
+          )}
+
+          {/* Actions Row */}
+          <View style={styles.ccActionsRow}>
+            <Pressable
+              style={[styles.ccPayBtn, { backgroundColor: "#EA580C" }]}
+              onPress={(e) => {
+                e.stopPropagation?.();
+                Haptics.selectionAsync().catch(() => {});
+                setTransferToId(a.id);
+                setTransferPrefillAmount(a.monthlyInstallment || a.balance);
+                setTransferModalOpen(true);
+              }}
+            >
+              <Ionicons name="swap-horizontal" size={13} color="#FFFFFF" />
+              <Text style={styles.ccPayBtnText}>
+                Deduct Repayment {a.monthlyInstallment ? `(${rm(a.monthlyInstallment)})` : ""}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.ccTogglePaidBtn}
+              onPress={(e) => {
+                e.stopPropagation?.();
+                Haptics.selectionAsync().catch(() => {});
+                setReminderAccount(a);
+              }}
+            >
+              <Ionicons name="calculator-outline" size={13} color={colors.onSurface} />
+              <Text style={styles.ccTogglePaidText}>Amortization</Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.ccEditBtn}
+              onPress={(e) => {
+                e.stopPropagation?.();
+                Haptics.selectionAsync().catch(() => {});
+                setEditingAccount(a);
+              }}
+            >
+              <Ionicons name="settings-outline" size={14} color={colors.onSurfaceSecondary} />
+            </Pressable>
+          </View>
+        </Pressable>
+      );
+    }
+
+    // 3. REGULAR ASSET CARD (BANK, EWALLET, CASH, SAVINGS, FD)
+    return (
+      <Pressable
+        key={a.id}
+        testID={`account-${a.id}`}
+        onPress={() => {
+          Haptics.selectionAsync().catch(() => {});
+          setEditingAccount(a);
+        }}
+        onLongPress={() => remove(a)}
+        style={({ pressed }) => [
+          styles.accountCard,
+          { borderLeftColor: a.color || colors.brandPrimary },
+          pressed && { opacity: 0.9 },
+        ]}
+      >
+        <View style={styles.accountEmojiBox}>
+          <Text style={{ fontSize: 24 }}>{a.emoji}</Text>
+        </View>
+
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={styles.accountName}>{a.name}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <Text style={styles.accountType}>
+              {a.type === "fd"
+                ? `FIXED DEPOSIT · ${a.interestRate || 3.8}% p.a.`
+                : a.type === "investment"
+                ? `INVESTMENT · ${a.interestRate || 4.2}% return`
+                : a.type.toUpperCase()}
+            </Text>
+          </View>
+        </View>
+
+        <View style={{ alignItems: "flex-end", gap: 1 }}>
+          <Text style={styles.accountBalance}>{rm(a.balance)}</Text>
+          <Text style={styles.accountHours}>
+            ⏱️ {accHours.toFixed(1)}h worth
+          </Text>
+        </View>
+      </Pressable>
+    );
+  };
 
   return (
     <SafeAreaView
@@ -441,103 +839,99 @@ export default function Accounts() {
           })}
         </ScrollView>
 
-        {/* Account List */}
-        {filteredAccounts.map((a) => {
-          const isDebt = isLiabilityAccount(a.type);
-          const accHours = amountToWorkHours(a.balance, wage.hourlyRate);
-
-          return (
-            <Pressable
-              key={a.id}
-              testID={`account-${a.id}`}
-              onPress={() => {
-                Haptics.selectionAsync().catch(() => {});
-                setEditingAccount(a);
-              }}
-              onLongPress={() => remove(a)}
-              style={({ pressed }) => [
-                styles.accountCard,
-                { borderLeftColor: a.color },
-                pressed && { opacity: 0.9 },
-              ]}
-            >
-              <View style={styles.accountEmojiBox}>
-                <Text style={{ fontSize: 24 }}>{a.emoji}</Text>
-              </View>
-
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={styles.accountName}>{a.name}</Text>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  <Text style={styles.accountType}>
-                    {a.type === "credit_card"
-                      ? "CREDIT CARD"
-                      : a.type === "fd"
-                      ? `FD · ${a.interestRate || 3.8}% p.a.`
-                      : a.type === "loan"
-                      ? `LOAN · ${a.interestRate || 3.5}% interest`
-                      : a.type.toUpperCase()}
+        {/* Account List Grouped by Category */}
+        {activeFilter === "all" ? (
+          <View style={{ gap: spacing.lg }}>
+            {/* 1. Spendable Cash & Liquid Accounts */}
+            {liquidAccounts.length > 0 && (
+              <View style={styles.accountGroup}>
+                <View style={styles.groupHeaderRow}>
+                  <Text style={styles.groupHeaderTitle}>💰 Spendable Cash & eWallets</Text>
+                  <Text style={styles.groupHeaderTotal}>
+                    +{rm(liquidAccounts.reduce((s, a) => s + a.balance, 0))}
                   </Text>
-                  {a.creditLimit && (
-                    <Text style={styles.limitTag}>Limit {rm(a.creditLimit)}</Text>
-                  )}
-                  {isDebt && a.dueDay && (
-                    <Pressable
-                      style={styles.dueBadge}
-                      onPress={(e) => {
-                        e.stopPropagation?.();
-                        Haptics.selectionAsync().catch(() => {});
-                        setReminderAccount(a);
-                      }}
-                    >
-                      <Text style={styles.dueBadgeText}>
-                        🔔 {a.dueDay}th {a.monthlyInstallment ? `(${rm(a.monthlyInstallment)}/mo)` : ""}
-                      </Text>
-                    </Pressable>
-                  )}
                 </View>
-
-                {/* Quick Repayment & Calculation Actions for Loans & Debt */}
-                {isDebt && (
-                  <View style={styles.debtActionsRow}>
-                    <Pressable
-                      style={styles.repayPillBtn}
-                      onPress={(e) => {
-                        e.stopPropagation?.();
-                        Haptics.selectionAsync().catch(() => {});
-                        setTransferToId(a.id);
-                        setTransferPrefillAmount(a.monthlyInstallment || a.balance);
-                        setTransferModalOpen(true);
-                      }}
-                    >
-                      <Ionicons name="swap-horizontal" size={12} color="#FFFFFF" />
-                      <Text style={styles.repayPillBtnText}>Deduct Repayment</Text>
-                    </Pressable>
-                    <Pressable
-                      style={styles.calcPillBtn}
-                      onPress={(e) => {
-                        e.stopPropagation?.();
-                        Haptics.selectionAsync().catch(() => {});
-                        setReminderAccount(a);
-                      }}
-                    >
-                      <Ionicons name="calculator-outline" size={12} color={colors.brandPrimary} />
-                      <Text style={styles.calcPillBtnText}>Calculator / Remind</Text>
-                    </Pressable>
-                  </View>
-                )}
+                <View style={{ gap: spacing.sm }}>
+                  {liquidAccounts.map(renderAccountCard)}
+                </View>
               </View>
+            )}
 
-              <View style={{ alignItems: "flex-end", gap: 1 }}>
-                <Text style={[styles.accountBalance, isDebt && { color: "#EF4444" }]}>
-                  {isDebt ? `-${rm(a.balance)}` : rm(a.balance)}
-                </Text>
-                <Text style={styles.accountHours}>
-                  ⏱️ {accHours.toFixed(1)}h {isDebt ? "to pay off" : "worth"}
-                </Text>
+            {/* 2. Credit Cards */}
+            {creditCardAccounts.length > 0 && (
+              <View style={styles.accountGroup}>
+                <View style={styles.groupHeaderRow}>
+                  <Text style={styles.groupHeaderTitle}>💳 Credit Cards</Text>
+                  <Text style={[styles.groupHeaderTotal, { color: "#EF4444" }]}>
+                    -{rm(creditCardAccounts.reduce((s, a) => s + a.balance, 0))}
+                  </Text>
+                </View>
+                <View style={{ gap: spacing.sm }}>
+                  {creditCardAccounts.map(renderAccountCard)}
+                </View>
               </View>
-            </Pressable>
-          );
-        })}
+            )}
+
+            {/* 3. Loans & Financing */}
+            {loanAccounts.length > 0 && (
+              <View style={styles.accountGroup}>
+                <View style={styles.groupHeaderRow}>
+                  <Text style={styles.groupHeaderTitle}>🚘 Loans & Commitments</Text>
+                  <Text style={[styles.groupHeaderTotal, { color: "#EF4444" }]}>
+                    -{rm(loanAccounts.reduce((s, a) => s + a.balance, 0))}
+                  </Text>
+                </View>
+                <View style={{ gap: spacing.sm }}>
+                  {loanAccounts.map(renderAccountCard)}
+                </View>
+              </View>
+            )}
+
+            {/* 4. Savings & Investments */}
+            {savingsAccounts.length > 0 && (
+              <View style={styles.accountGroup}>
+                <View style={styles.groupHeaderRow}>
+                  <Text style={styles.groupHeaderTitle}>📈 Savings, FDs & Stash</Text>
+                  <Text style={styles.groupHeaderTotal}>
+                    +{rm(savingsAccounts.reduce((s, a) => s + a.balance, 0))}
+                  </Text>
+                </View>
+                <View style={{ gap: spacing.sm }}>
+                  {savingsAccounts.map(renderAccountCard)}
+                </View>
+              </View>
+            )}
+          </View>
+        ) : (
+          <View style={{ gap: spacing.sm }}>
+            {filteredAccounts.map(renderAccountCard)}
+          </View>
+        )}
+
+        {/* 🎯 Target Savings & Sinking Funds (Travel Fund, Stash, Goals) */}
+        {(activeFilter === "all" || activeFilter === "fd") && (
+          <SavingsGoalCard
+            goals={savingsGoals}
+            accounts={accounts}
+            wage={wage}
+            onAddGoal={async (newGoal) => {
+              await addSavingsGoal(newGoal);
+              const updated = await getSavingsGoals();
+              setSavingsGoalsList(updated);
+            }}
+            onUpdateGoal={async (updatedGoal) => {
+              await updateSavingsGoal(updatedGoal);
+              const updated = await getSavingsGoals();
+              setSavingsGoalsList(updated);
+            }}
+            onDeleteGoal={async (goalId) => {
+              await deleteSavingsGoal(goalId);
+              const updated = await getSavingsGoals();
+              setSavingsGoalsList(updated);
+            }}
+            onQuickStash={handleQuickStash}
+          />
+        )}
 
         {filteredAccounts.length === 0 && (
           <View style={styles.emptyBox}>
@@ -839,7 +1233,14 @@ export default function Accounts() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface, overflow: "hidden" },
+  container: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    overflow: "hidden",
+    maxWidth: 680,
+    width: "100%",
+    alignSelf: "center",
+  },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1415,5 +1816,173 @@ const styles = StyleSheet.create({
     color: "#B45309",
     fontWeight: "700",
     fontSize: 10,
+  },
+  accountGroup: {
+    gap: spacing.sm,
+  },
+  groupHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 4,
+    marginBottom: 2,
+  },
+  groupHeaderTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: colors.onSurface,
+    letterSpacing: -0.2,
+  },
+  groupHeaderTotal: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#059669",
+  },
+  ccCard: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    borderTopWidth: 4,
+    gap: 12,
+    ...shadow.card,
+  },
+  loanCard: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    borderTopWidth: 4,
+    gap: 12,
+    ...shadow.card,
+  },
+  ccHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  statementStatusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+  },
+  statementStatusPillCleared: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
+  },
+  statementStatusText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#D97706",
+  },
+  statementStatusTextCleared: {
+    color: "#059669",
+  },
+  ccMetricsGrid: {
+    flexDirection: "row",
+    backgroundColor: colors.surface,
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    alignItems: "center",
+  },
+  ccMetricTile: {
+    flex: 1,
+    gap: 2,
+  },
+  ccMetricDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: colors.border,
+    marginHorizontal: 8,
+  },
+  ccMetricLabel: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: colors.onSurfaceSecondary,
+    letterSpacing: 0.5,
+  },
+  ccMetricVal: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: colors.onSurface,
+  },
+  ccMetricSub: {
+    fontSize: 9.5,
+    color: colors.onSurfaceSecondary,
+    fontWeight: "500",
+  },
+  ccLimitBarWrap: {
+    gap: 4,
+  },
+  ccLimitInfoRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  ccLimitLabel: {
+    fontSize: 10.5,
+    color: colors.onSurfaceSecondary,
+    fontWeight: "600",
+  },
+  ccLimitTrack: {
+    height: 6,
+    backgroundColor: colors.border,
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  ccLimitFill: {
+    height: "100%",
+    borderRadius: 3,
+  },
+  ccActionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingTop: 4,
+  },
+  ccPayBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    backgroundColor: colors.brandPrimary,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: radius.pill,
+    ...shadow.soft,
+  },
+  ccPayBtnText: {
+    color: "#FFFFFF",
+    fontSize: 11.5,
+    fontWeight: "800",
+  },
+  ccTogglePaidBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: radius.pill,
+  },
+  ccTogglePaidText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.onSurface,
+  },
+  ccEditBtn: {
+    padding: 8,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

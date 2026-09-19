@@ -14,7 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { colors, radius, shadow, spacing } from "@/src/theme";
 import { CATEGORIES, INCOME_CATEGORIES, categoryMeta } from "@/src/constants";
-import { amountToWorkHours, formatTimeCost, getBobaReaction, rm, shortDate, todayISO } from "@/src/format";
+import { amountToWorkHours, formatTimeCost, getBobaReaction, rm, shortDate, todayISO, yesterdayISO } from "@/src/format";
 import { Account, BudgetBucket, Transaction } from "@/src/types";
 import { AnimatedMascot } from "./AnimatedMascot";
 
@@ -344,7 +344,33 @@ export function TransactionDetailModal({
 
               {/* Date */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Date (YYYY-MM-DD)</Text>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                  <Text style={styles.inputLabel}>Date (YYYY-MM-DD)</Text>
+                  <View style={{ flexDirection: "row", gap: 6 }}>
+                    <Pressable
+                      style={[styles.dateChipSmall, editDate === todayISO() && styles.dateChipSmallActive]}
+                      onPress={() => {
+                        Haptics.selectionAsync().catch(() => {});
+                        setEditDate(todayISO());
+                      }}
+                    >
+                      <Text style={[styles.dateChipSmallText, editDate === todayISO() && styles.dateChipSmallTextActive]}>
+                        Today
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.dateChipSmall, editDate === yesterdayISO() && styles.dateChipSmallActive]}
+                      onPress={() => {
+                        Haptics.selectionAsync().catch(() => {});
+                        setEditDate(yesterdayISO());
+                      }}
+                    >
+                      <Text style={[styles.dateChipSmallText, editDate === yesterdayISO() && styles.dateChipSmallTextActive]}>
+                        Yesterday
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
                 <TextInput
                   value={editDate}
                   onChangeText={setEditDate}
@@ -856,6 +882,27 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 14,
     color: "#EF4444",
+  },
+  dateChipSmall: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  dateChipSmallActive: {
+    backgroundColor: colors.brandPrimary,
+    borderColor: colors.brandPrimary,
+  },
+  dateChipSmallText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: colors.onSurfaceSecondary,
+  },
+  dateChipSmallTextActive: {
+    color: colors.onBrandPrimary,
+    fontWeight: "800",
   },
 });
 

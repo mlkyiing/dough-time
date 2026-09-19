@@ -13,8 +13,9 @@ import {
   PaydayPlan,
   RecurringTxn,
   WishlistItem,
+  SavingsGoal,
 } from "./types";
-import { rm } from "./format";
+import { rm, todayISO } from "./format";
 
 const K_ACCOUNTS = "dm.accounts.v3";
 const K_TXNS = "dm.transactions.v3";
@@ -28,6 +29,7 @@ const K_DELETED_ACCS = "dt.deleted.accs.v1";
 const K_PAYDAY_PLAN = "dt.payday.plan.v1";
 const K_RECURRING = "dt.recurring.v1";
 const K_WISHLIST = "dt.wishlist.v1";
+const K_SAVINGS_GOALS = "dt.savings_goals.v1";
 
 export const DEFAULT_WAGE: WageSettings = {
   mode: "salary",
@@ -1077,6 +1079,180 @@ export async function updateWishlistItem(updated: WishlistItem) {
 export async function deleteWishlistItem(idToRemove: string) {
   const list = (await getWishlistItems()).filter((w) => w.id !== idToRemove);
   await setWishlistItems(list);
+}
+
+// ----------------------------------------------------
+// Recurring Runner & Auto-Execution Engine
+// ----------------------------------------------------
+export async function executeRecurringRule(
+  sub: RecurringTxn,
+  date?: string
+): Promise<{ transaction: Transaction; accountUpdated: boolean }> {
+  const isTransfer = sub.type === "transfer" || (sub.type === "savings" && Boolean(sub.toAccountId));
+  const txDate = date || todayISO();
+
+  let createdTx: Transaction;
+
+  if (isTransfer && sub.toAccountId && sub.accountId) {
+    createdTx = await transferFunds({
+      fromAccountId: sub.accountId,
+      toAccountId: sub.toAccountId,
+      amount: sub.amount,
+      recurringId: sub.id,
+      bucket: sub.type === "savings" ? "savings" : undefined,
+      note: `[Recurring: ${sub.name}] ${sub.note || "Monthly scheduled transfer"} 🔁`,
+      category: sub.type === "savings" ? "Savings" : "Transfer",
+      date: txDate,
+    });
+  } else if (sub.type === "savings") {
+    // If only one account was provided:
+    // If user selected their savings account (e.g. Travel Fund), saving into it is an INFLOW (deposit).
+    const accs = await getAccounts();
+    const acc = accs.find((a) => a.id === sub.accountId);
+    const isDedicatedSavingsAccount =
+      acc?.type === "fd" ||
+      acc?.type === "investment" ||
+      Boolean(acc?.name.toLowerCase().match(/travel|savings|stash|tabung|fund|asnb|goal/));
+
+    if (isDedicatedSavingsAccount) {
+      createdTx = await addTransaction({
+        amount: sub.amount,
+        type: "income", // Direct deposit into savings account increases balance!
+        bucket: "savings",
+        category: sub.category || "Savings",
+        accountId: sub.accountId,
+        merchant: sub.name,
+        note: `[Recurring: ${sub.name}] Monthly savings deposit 📈`,
+        date: txDate,
+        recurringId: sub.id,
+      });
+    } else {
+      createdTx = await addTransaction({
+        amount: sub.amount,
+        type: "expense",
+        bucket: "savings",
+        category: sub.category || "Savings",
+        accountId: sub.accountId,
+        merchant: sub.name,
+        note: `[Recurring: ${sub.name}] Monthly savings & stash 📈`,
+        date: txDate,
+        recurringId: sub.id,
+      });
+    }
+  } else {
+    const b: BudgetBucket = sub.bucket || (sub.category === "Subscriptions" ? "comfort" : "needs");
+    createdTx = await addTransaction({
+      amount: sub.amount,
+      type: "expense",
+      bucket: b,
+      category: sub.category || "Bills",
+      accountId: sub.accountId,
+      merchant: sub.name,
+      note: `[Recurring: ${sub.name}] ${sub.note || `Monthly ${sub.frequency} bill`} 🔁`,
+      date: txDate,
+      recurringId: sub.id,
+    });
+  }
+
+  // Update rule lastLoggedMonth
+  const curMonth = (txDate || todayISO()).slice(0, 7);
+  const rules = await getRecurringTxns();
+  const ruleIdx = rules.findIndex((r) => r.id === sub.id);
+  if (ruleIdx >= 0) {
+    rules[ruleIdx].lastLoggedMonth = curMonth;
+    await setRecurringTxns(rules);
+  }
+
+  return { transaction: createdTx, accountUpdated: true };
+}
+
+export async function checkAndProcessRecurringDue(): Promise<number> {
+  const currentMonth = todayISO().slice(0, 7);
+  const currentDay = new Date().getDate();
+  const rules = await getRecurringTxns();
+
+  let processedCount = 0;
+  for (const rule of rules) {
+    if (rule.enabled === false) continue;
+    if (rule.lastLoggedMonth === currentMonth) continue;
+    if (currentDay >= (rule.dayOfMonth || 1)) {
+      try {
+        await executeRecurringRule(rule);
+        processedCount++;
+      } catch (err) {
+        console.warn("Failed to auto-process recurring rule", rule.name, err);
+      }
+    }
+  }
+
+  return processedCount;
+}
+
+// ----------------------------------------------------
+// Target Savings & Sinking Fund Goals
+// ----------------------------------------------------
+export const DEFAULT_SAVINGS_GOALS: SavingsGoal[] = [
+  {
+    id: "goal_travel",
+    title: "Travel Fund ✈️",
+    targetAmount: 5000,
+    currentAmount: 1200,
+    targetDate: "2026-12-31",
+    category: "Travel",
+    emoji: "✈️",
+    color: "#0D9488",
+    notes: "Vacation & holiday adventure fund",
+  },
+];
+
+export async function getSavingsGoals(): Promise<SavingsGoal[]> {
+  const raw = await AsyncStorage.getItem(K_SAVINGS_GOALS);
+  if (!raw) {
+    // Seed default goal if accounts have a Travel Fund
+    const accs = await getAccounts();
+    const travelAcc = accs.find((a) => a.name.toLowerCase().includes("travel"));
+    if (travelAcc) {
+      DEFAULT_SAVINGS_GOALS[0].accountId = travelAcc.id;
+      DEFAULT_SAVINGS_GOALS[0].currentAmount = Math.max(0, travelAcc.balance);
+    }
+    await setSavingsGoals(DEFAULT_SAVINGS_GOALS);
+    return DEFAULT_SAVINGS_GOALS;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+export async function setSavingsGoals(list: SavingsGoal[]) {
+  await AsyncStorage.setItem(K_SAVINGS_GOALS, JSON.stringify(list));
+  await touchModified();
+}
+
+export async function addSavingsGoal(goal: Omit<SavingsGoal, "id">): Promise<SavingsGoal> {
+  const list = await getSavingsGoals();
+  const created: SavingsGoal = {
+    ...goal,
+    id: id(),
+  };
+  list.push(created);
+  await setSavingsGoals(list);
+  return created;
+}
+
+export async function updateSavingsGoal(updated: SavingsGoal): Promise<void> {
+  const list = await getSavingsGoals();
+  const idx = list.findIndex((g) => g.id === updated.id);
+  if (idx >= 0) {
+    list[idx] = updated;
+    await setSavingsGoals(list);
+  }
+}
+
+export async function deleteSavingsGoal(idToRemove: string): Promise<void> {
+  const list = (await getSavingsGoals()).filter((g) => g.id !== idToRemove);
+  await setSavingsGoals(list);
 }
 
 

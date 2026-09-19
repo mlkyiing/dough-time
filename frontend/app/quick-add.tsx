@@ -1,6 +1,8 @@
 import { useEffect, useState, useMemo } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
+  Alert,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -23,6 +25,7 @@ import {
   getBobaReaction,
   rm,
   todayISO,
+  yesterdayISO,
 } from "@/src/format";
 
 const BUCKET_OPTIONS: { key: BudgetBucket; label: string; emoji: string }[] = [
@@ -42,6 +45,12 @@ export default function QuickAddModal() {
     from?: string;
     to?: string;
   }>();
+
+  const todayStr = useMemo(() => todayISO(), []);
+  const yesterdayStr = useMemo(() => yesterdayISO(), []);
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const [dateModalOpen, setDateModalOpen] = useState(false);
+  const [customDateInput, setCustomDateInput] = useState(todayStr);
 
   const [recordType, setRecordType] = useState<"expense" | "income" | "transfer">(
     (params.type as any) || "expense"
@@ -137,7 +146,7 @@ export default function QuickAddModal() {
           amount: amt,
           note: note.trim() || undefined,
           category: isToLoanOrDebt ? "Loan / Debt" : "Transfer",
-          date: todayISO(),
+          date: selectedDate || todayStr,
         });
       } else {
         await addTransaction({
@@ -148,7 +157,7 @@ export default function QuickAddModal() {
           accountId,
           merchant: merchant.trim() || undefined,
           note: note.trim() || undefined,
-          date: todayISO(),
+          date: selectedDate || todayStr,
         });
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -417,6 +426,76 @@ export default function QuickAddModal() {
             </View>
           </>
         )}
+
+        {/* Date Selector Row */}
+        <View style={styles.dateSelectorContainer}>
+          <Text style={styles.fieldLabel}>TRANSACTION DATE</Text>
+          <View style={styles.dateChipsRow}>
+            <Pressable
+              style={[styles.dateChip, selectedDate === todayStr && styles.dateChipActive]}
+              onPress={() => {
+                Haptics.selectionAsync().catch(() => {});
+                setSelectedDate(todayStr);
+              }}
+            >
+              <Ionicons
+                name="today-outline"
+                size={14}
+                color={selectedDate === todayStr ? colors.onBrandPrimary : colors.onSurfaceSecondary}
+              />
+              <Text style={[styles.dateChipText, selectedDate === todayStr && styles.dateChipTextActive]}>
+                Today
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={[styles.dateChip, selectedDate === yesterdayStr && styles.dateChipActive]}
+              onPress={() => {
+                Haptics.selectionAsync().catch(() => {});
+                setSelectedDate(yesterdayStr);
+              }}
+            >
+              <Ionicons
+                name="play-back-outline"
+                size={14}
+                color={selectedDate === yesterdayStr ? colors.onBrandPrimary : colors.onSurfaceSecondary}
+              />
+              <Text style={[styles.dateChipText, selectedDate === yesterdayStr && styles.dateChipTextActive]}>
+                Yesterday
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.dateChip,
+                selectedDate !== todayStr && selectedDate !== yesterdayStr && styles.dateChipActive,
+              ]}
+              onPress={() => {
+                Haptics.selectionAsync().catch(() => {});
+                setCustomDateInput(selectedDate);
+                setDateModalOpen(true);
+              }}
+            >
+              <Ionicons
+                name="calendar-outline"
+                size={14}
+                color={
+                  selectedDate !== todayStr && selectedDate !== yesterdayStr
+                    ? colors.onBrandPrimary
+                    : colors.onSurfaceSecondary
+                }
+              />
+              <Text
+                style={[
+                  styles.dateChipText,
+                  selectedDate !== todayStr && selectedDate !== yesterdayStr && styles.dateChipTextActive,
+                ]}
+              >
+                {selectedDate !== todayStr && selectedDate !== yesterdayStr ? selectedDate : "Pick Date 📅"}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
       </ScrollView>
 
       {/* 4. PINNED KEYPAD & SAVE BUTTON AT THE BOTTOM */}
@@ -462,6 +541,79 @@ export default function QuickAddModal() {
           </Text>
         </Pressable>
       </View>
+
+      {/* Custom Date Modal */}
+      <Modal visible={dateModalOpen} transparent animationType="fade" onRequestClose={() => setDateModalOpen(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setDateModalOpen(false)}>
+          <Pressable style={styles.dateModalCard} onPress={(e) => e.stopPropagation?.()}>
+            <View style={styles.dateModalHeader}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Ionicons name="calendar" size={20} color={colors.brandPrimary} />
+                <Text style={styles.dateModalTitle}>Edit Transaction Date</Text>
+              </View>
+              <Pressable hitSlop={10} onPress={() => setDateModalOpen(false)}>
+                <Ionicons name="close" size={20} color={colors.onSurfaceSecondary} />
+              </Pressable>
+            </View>
+
+            <Text style={styles.dateModalSub}>
+              Enter date in YYYY-MM-DD format, or pick a fast preset:
+            </Text>
+
+            <TextInput
+              value={customDateInput}
+              onChangeText={setCustomDateInput}
+              placeholder="YYYY-MM-DD (e.g. 2026-09-18)"
+              placeholderTextColor={colors.onSurfaceSecondary}
+              style={styles.dateInput}
+              autoFocus
+            />
+
+            {/* Quick offset buttons */}
+            <View style={{ flexDirection: "row", gap: 6, marginVertical: 8 }}>
+              {[-3, -2, -1, 0].map((daysOffset) => {
+                const targetD = new Date();
+                targetD.setDate(targetD.getDate() + daysOffset);
+                const iso = targetD.toISOString().slice(0, 10);
+                const label = daysOffset === 0 ? "Today" : daysOffset === -1 ? "Yesterday" : `${Math.abs(daysOffset)}d ago`;
+                return (
+                  <Pressable
+                    key={daysOffset}
+                    style={styles.dateOffsetChip}
+                    onPress={() => {
+                      Haptics.selectionAsync().catch(() => {});
+                      setCustomDateInput(iso);
+                    }}
+                  >
+                    <Text style={styles.dateOffsetChipText}>{label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={styles.dateModalActions}>
+              <Pressable style={styles.dateModalCancel} onPress={() => setDateModalOpen(false)}>
+                <Text style={styles.dateModalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={styles.dateModalApply}
+                onPress={() => {
+                  const cleaned = customDateInput.trim();
+                  if (/^\d{4}-\d{2}-\d{2}$/.test(cleaned)) {
+                    setSelectedDate(cleaned);
+                    Haptics.selectionAsync().catch(() => {});
+                    setDateModalOpen(false);
+                  } else {
+                    Alert.alert("Invalid Format", "Please enter the date formatted as YYYY-MM-DD (e.g. 2026-09-15)");
+                  }
+                }}
+              >
+                <Text style={styles.dateModalApplyText}>Apply Date</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -470,6 +622,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.surface,
+    maxWidth: 640,
+    width: "100%",
+    alignSelf: "center",
   },
   header: {
     flexDirection: "row",
@@ -747,5 +902,126 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "800",
     fontSize: 14,
+  },
+  dateSelectorContainer: {
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  dateChipsRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 4,
+  },
+  dateChip: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  dateChipActive: {
+    backgroundColor: colors.brandPrimary,
+    borderColor: colors.brandPrimary,
+    ...shadow.soft,
+  },
+  dateChipText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.onSurfaceSecondary,
+  },
+  dateChipTextActive: {
+    color: colors.onBrandPrimary,
+    fontWeight: "800",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: spacing.lg,
+  },
+  dateModalCard: {
+    width: "100%",
+    maxWidth: 380,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    ...shadow.card,
+  },
+  dateModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  dateModalTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: colors.onSurface,
+  },
+  dateModalSub: {
+    fontSize: 12,
+    color: colors.onSurfaceSecondary,
+    marginBottom: 12,
+  },
+  dateInput: {
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.onSurface,
+  },
+  dateOffsetChip: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+  },
+  dateOffsetChipText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.onSurfaceSecondary,
+  },
+  dateModalActions: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 14,
+  },
+  dateModalCancel: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: "center",
+  },
+  dateModalCancelText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.onSurfaceSecondary,
+  },
+  dateModalApply: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: radius.md,
+    backgroundColor: colors.brandPrimary,
+    alignItems: "center",
+  },
+  dateModalApplyText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: colors.onBrandPrimary,
   },
 });

@@ -7,7 +7,6 @@ export const NEEDS_CATEGORIES: string[] = [
   "Tolls",
   "Telco",
   "Health",
-  "Loan / Debt",
   "Makan",
 ];
 
@@ -26,14 +25,32 @@ export const SAVINGS_CATEGORIES: string[] = [
   "Stash",
 ];
 
+export const OBLIGATION_CATEGORIES: string[] = [
+  "Loan / Debt",
+  "Loan",
+  "Debt",
+  "Installment",
+];
+
+export const ALL_LIFE_BUDGET_CATEGORIES = [
+  ...NEEDS_CATEGORIES,
+  ...COMFORT_CATEGORIES,
+];
+
 /**
  * Returns which bucket a transaction category belongs to:
- * - "needs": Essentials, food, transport, bills, fixed commitments
- * - "comfort": Guilt-free comfort, "nonsense" money, shopping (Pinduoduo/Shopee), boba, treats
+ * - "needs": Essentials, food, transport, bills
+ * - "comfort": Guilt-free comfort, "nonsense" money, shopping, boba, treats
  * - "savings": Future wealth, investments, emergency stash
  */
-export function getCategoryBucket(category?: string | null): BudgetBucket {
+export function getCategoryBucket(
+  category?: string | null,
+  customNeeds?: string[],
+  customComfort?: string[]
+): BudgetBucket {
   if (!category) return "needs";
+  if (customNeeds && customNeeds.includes(category)) return "needs";
+  if (customComfort && customComfort.includes(category)) return "comfort";
   if (COMFORT_CATEGORIES.includes(category)) return "comfort";
   if (SAVINGS_CATEGORIES.includes(category)) return "savings";
   return "needs";
@@ -156,32 +173,64 @@ export interface BucketSpendingSummary {
   needsSpent: number;
   comfortSpent: number;
   savingsSpent: number;
+  debtObligationsSpent: number; // Distinct from living needs
   totalSpent: number;
   needsCount: number;
   comfortCount: number;
 }
 
 /**
- * Calculates current month's spending segregated into Needs vs Comfort / "Nonsense" money
+ * Calculates current month's spending segregated into Needs vs Comfort / "Nonsense" money,
+ * strictly filtering out debt/loans from the living needs pool and respecting user-configured categories.
  */
 export function calculateBucketSpending(
   transactions: Transaction[],
-  monthISO: string
+  monthISO: string,
+  budgetSettings?: BudgetSettings
 ): BucketSpendingSummary {
   let needsSpent = 0;
   let comfortSpent = 0;
   let savingsSpent = 0;
+  let debtObligationsSpent = 0;
   let totalSpent = 0;
   let needsCount = 0;
   let comfortCount = 0;
 
+  const includedCats = budgetSettings?.includedCategories;
+  const customNeeds = budgetSettings?.customNeedsCategories;
+  const customComfort = budgetSettings?.customComfortCategories;
+
   for (const t of transactions) {
-    // Only count actual expenses (exclude income records and account-to-account transfers)
-    if (t.type === "income" || t.type === "transfer") continue;
+    // Only count actual expenses or loan payments
+    if (t.type === "income") continue;
+
+    // Direct loan repayments via transfer
+    if (t.type === "transfer") {
+      if (t.category === "Loan / Debt" || OBLIGATION_CATEGORIES.includes(t.category)) {
+        if (t.date && t.date.startsWith(monthISO) && t.amount > 0) {
+          debtObligationsSpent += t.amount;
+        }
+      }
+      continue;
+    }
 
     if (t.date && t.date.startsWith(monthISO) && t.amount > 0) {
+      // If categorized as loan/debt, segregate to debt obligations
+      if (OBLIGATION_CATEGORIES.includes(t.category) || t.category === "Loan / Debt") {
+        debtObligationsSpent += t.amount;
+        continue;
+      }
+
+      // If user configured a specific set of categories to include in the Life Budget:
+      if (includedCats && includedCats.length > 0) {
+        if (!includedCats.includes(t.category)) {
+          // Category explicitly excluded from Life Budget
+          continue;
+        }
+      }
+
       totalSpent += t.amount;
-      const bucket = t.bucket || getCategoryBucket(t.category);
+      const bucket = t.bucket || getCategoryBucket(t.category, customNeeds, customComfort);
       if (bucket === "comfort") {
         comfortSpent += t.amount;
         comfortCount += 1;
@@ -198,6 +247,7 @@ export function calculateBucketSpending(
     needsSpent,
     comfortSpent,
     savingsSpent,
+    debtObligationsSpent,
     totalSpent,
     needsCount,
     comfortCount,

@@ -18,7 +18,9 @@ import { amountToWorkHours, rm } from "@/src/format";
 import {
   analyzeAccountBudget,
   BUDGET_PRESETS,
+  ALL_LIFE_BUDGET_CATEGORIES,
 } from "../utils/budgetAnalyzer";
+import { CATEGORIES } from "../constants";
 import { AnimatedMascot } from "./AnimatedMascot";
 
 interface Props {
@@ -49,6 +51,9 @@ export function SmartBudgetModal({
   const [needsLimit, setNeedsLimit] = useState("1300");
   const [comfortLimit, setComfortLimit] = useState("500");
   const [savingsTarget, setSavingsTarget] = useState("200");
+  const [includedCategories, setIncludedCategories] = useState<string[]>(
+    budget.includedCategories || ALL_LIFE_BUDGET_CATEGORIES
+  );
   const [isManualEdit, setIsManualEdit] = useState(false);
 
   useEffect(() => {
@@ -64,6 +69,12 @@ export function SmartBudgetModal({
 
       const p = budget.allocationPreset || "balanced_50_30_20";
       setPreset(p);
+
+      const defaultCats =
+        budget.includedCategories && budget.includedCategories.length > 0
+          ? budget.includedCategories
+          : ALL_LIFE_BUDGET_CATEGORIES;
+      setIncludedCategories(defaultCats);
 
       if (budget.needsLimit && budget.comfortLimit && budget.allocationPreset === "custom") {
         setNeedsLimit(String(budget.needsLimit));
@@ -132,6 +143,18 @@ export function SmartBudgetModal({
   const savingsHours = amountToWorkHours(numSavings, wage.hourlyRate);
   const totalHours = amountToWorkHours(totalOverallBudget, wage.hourlyRate);
 
+  const toggleCategory = (catKey: string) => {
+    Haptics.selectionAsync().catch(() => {});
+    setIncludedCategories((prev) => {
+      if (prev.includes(catKey)) {
+        if (prev.length <= 1) return prev; // keep at least one
+        return prev.filter((c) => c !== catKey);
+      } else {
+        return [...prev, catKey];
+      }
+    });
+  };
+
   const handleSave = () => {
     const updated: BudgetSettings = {
       ...budget,
@@ -142,6 +165,7 @@ export function SmartBudgetModal({
       savingsTarget: numSavings,
       selectedAccountIds,
       allocationPreset: isManualEdit ? "custom" : preset,
+      includedCategories,
       enabled: true,
     };
     onSave(updated);
@@ -313,6 +337,49 @@ export function SmartBudgetModal({
                           color={active ? colors.brandPrimary : colors.onSurfaceSecondary}
                         />
                       </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Categories Included in Monthly Life Budget */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>📋 Included in Monthly Life Budget</Text>
+                <View style={styles.catCountBadge}>
+                  <Text style={styles.catCountBadgeText}>{includedCategories.length} Categories</Text>
+                </View>
+              </View>
+              <Text style={styles.catConfigSub}>
+                Select which living expense categories count toward this monthly life budget. Note: Loans & debt repayments are deducted separately as fixed commitments.
+              </Text>
+              <View style={styles.catChipsWrap}>
+                {CATEGORIES.filter((c) => c.key !== "Loan / Debt" && c.key !== "Investment").map((cat) => {
+                  const isIncluded = includedCategories.includes(cat.key);
+                  return (
+                    <Pressable
+                      key={cat.key}
+                      onPress={() => toggleCategory(cat.key)}
+                      style={[
+                        styles.catFilterChip,
+                        isIncluded && styles.catFilterChipActive,
+                      ]}
+                    >
+                      <Text style={{ fontSize: 13 }}>{cat.emoji}</Text>
+                      <Text
+                        style={[
+                          styles.catFilterChipText,
+                          isIncluded && styles.catFilterChipTextActive,
+                        ]}
+                      >
+                        {cat.key}
+                      </Text>
+                      <Ionicons
+                        name={isIncluded ? "checkmark-circle" : "add-circle-outline"}
+                        size={15}
+                        color={isIncluded ? colors.brandPrimary : colors.onSurfaceSecondary}
+                      />
                     </Pressable>
                   );
                 })}
@@ -878,5 +945,56 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 11,
     fontWeight: "800",
+  },
+  catCountBadge: {
+    backgroundColor: colors.surfaceTertiary,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  catCountBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: colors.brandPrimary,
+  },
+  catConfigSub: {
+    fontSize: 12,
+    color: colors.onSurfaceSecondary,
+    marginTop: 4,
+    marginBottom: 8,
+    lineHeight: 16,
+  },
+  catChipsWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 4,
+  },
+  catFilterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceTertiary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  catFilterChipActive: {
+    backgroundColor: colors.surface,
+    borderColor: colors.brandPrimary,
+    ...shadow.soft,
+  },
+  catFilterChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.onSurfaceSecondary,
+  },
+  catFilterChipTextActive: {
+    fontWeight: "800",
+    color: colors.onSurface,
   },
 });

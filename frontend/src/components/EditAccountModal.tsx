@@ -39,6 +39,9 @@ export function EditAccountModal({
   if (!account) return null;
 
   const isDebt = isLiabilityAccount(account);
+  const isCard = account.type === "credit_card";
+  const isLoan = account.type === "loan";
+
   const [name, setName] = useState("");
   const [balance, setBalance] = useState("");
   const [limit, setLimit] = useState("");
@@ -46,6 +49,14 @@ export function EditAccountModal({
   const [dueDay, setDueDay] = useState("");
   const [installment, setInstallment] = useState("");
   const [adjustmentNote, setAdjustmentNote] = useState("");
+
+  // Enhanced Credit Card & Loan Details
+  const [statementBalance, setStatementBalance] = useState("");
+  const [statementCutoffDay, setStatementCutoffDay] = useState("");
+  const [statementCleared, setStatementCleared] = useState(false);
+  const [loanPrincipal, setLoanPrincipal] = useState("");
+  const [loanTenureMonths, setLoanTenureMonths] = useState("");
+  const [loanRemainingMonths, setLoanRemainingMonths] = useState("");
 
   useEffect(() => {
     if (account) {
@@ -56,6 +67,13 @@ export function EditAccountModal({
       setDueDay(account.dueDay ? String(account.dueDay) : "");
       setInstallment(account.monthlyInstallment ? String(account.monthlyInstallment) : "");
       setAdjustmentNote("");
+
+      setStatementBalance(account.statementBalance !== undefined ? String(account.statementBalance) : "");
+      setStatementCutoffDay(account.statementCutoffDay ? String(account.statementCutoffDay) : "");
+      setStatementCleared(Boolean(account.statementCleared));
+      setLoanPrincipal(account.loanPrincipal ? String(account.loanPrincipal) : "");
+      setLoanTenureMonths(account.loanTenureMonths ? String(account.loanTenureMonths) : "");
+      setLoanRemainingMonths(account.loanRemainingMonths ? String(account.loanRemainingMonths) : "");
     }
   }, [account]);
 
@@ -78,6 +96,12 @@ export function EditAccountModal({
       interestRate: rate ? parseFloat(rate.replace(/,/g, "")) || undefined : undefined,
       dueDay: dueDay ? parseInt(dueDay, 10) || undefined : undefined,
       monthlyInstallment: installment ? parseFloat(installment.replace(/,/g, "")) || undefined : undefined,
+      statementBalance: statementBalance ? parseFloat(statementBalance.replace(/,/g, "")) || 0 : undefined,
+      statementCutoffDay: statementCutoffDay ? parseInt(statementCutoffDay, 10) || undefined : undefined,
+      statementCleared: Boolean(statementCleared),
+      loanPrincipal: loanPrincipal ? parseFloat(loanPrincipal.replace(/,/g, "")) || undefined : undefined,
+      loanTenureMonths: loanTenureMonths ? parseInt(loanTenureMonths, 10) || undefined : undefined,
+      loanRemainingMonths: loanRemainingMonths ? parseInt(loanRemainingMonths, 10) || undefined : undefined,
     };
 
     onSave(updated, adjustmentNote.trim() || undefined);
@@ -210,28 +234,199 @@ export function EditAccountModal({
               )}
             </View>
 
-            {/* Credit Limit for Cards */}
-            {account.type === "credit_card" && (
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Credit Limit (RM)</Text>
-                <TextInput
-                  value={limit}
-                  onChangeText={setLimit}
-                  keyboardType="decimal-pad"
-                  inputMode="decimal"
-                  placeholder="e.g. 8000.00"
-                  placeholderTextColor={colors.onSurfaceSecondary}
-                  style={styles.input}
-                />
+            {/* Credit Card Specific Fields: Statement Amount, Cutoff Day, Due Day, Credit Limit */}
+            {isCard && (
+              <View style={styles.cardDetailSection}>
+                <Text style={styles.sectionHeaderTitle}>💳 Credit Card Statement & Cycle Details</Text>
+                
+                {/* Statement Amount Due */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Current Statement Amount Due (RM)</Text>
+                  <TextInput
+                    value={statementBalance}
+                    onChangeText={setStatementBalance}
+                    keyboardType="decimal-pad"
+                    inputMode="decimal"
+                    placeholder="e.g. 1250.00 (amount to clear this cycle)"
+                    placeholderTextColor={colors.onSurfaceSecondary}
+                    style={styles.input}
+                  />
+                  <Text style={styles.inputHint}>
+                    The billed amount due for this cycle to avoid interest.
+                  </Text>
+                </View>
+
+                {/* Statement Cleared Checkbox/Toggle */}
+                <Pressable
+                  style={[styles.clearedToggleRow, statementCleared && styles.clearedToggleRowActive]}
+                  onPress={() => {
+                    Haptics.selectionAsync().catch(() => {});
+                    setStatementCleared(!statementCleared);
+                  }}
+                >
+                  <Ionicons
+                    name={statementCleared ? "checkbox" : "square-outline"}
+                    size={20}
+                    color={statementCleared ? "#10B981" : colors.onSurfaceSecondary}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.clearedToggleTitle, statementCleared && { color: "#065F46" }]}>
+                      Statement Cleared for this cycle ✅
+                    </Text>
+                    <Text style={styles.clearedToggleSub}>
+                      {statementCleared
+                        ? "Marked paid! Remaining outstanding will bill on the next statement."
+                        : "Tap if you have already cleared this month's statement."}
+                    </Text>
+                  </View>
+                </Pressable>
+
+                {/* Cutoff Day and Due Day Row */}
+                <View style={{ flexDirection: "row", gap: spacing.md, marginTop: spacing.sm }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>Statement Cutoff Day</Text>
+                    <TextInput
+                      value={statementCutoffDay}
+                      onChangeText={setStatementCutoffDay}
+                      keyboardType="number-pad"
+                      inputMode="numeric"
+                      placeholder="e.g. 5"
+                      maxLength={2}
+                      placeholderTextColor={colors.onSurfaceSecondary}
+                      style={styles.input}
+                    />
+                    <Text style={styles.inputHint}>Cycle ends (1-31)</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>Payment Due Day</Text>
+                    <TextInput
+                      value={dueDay}
+                      onChangeText={setDueDay}
+                      keyboardType="number-pad"
+                      inputMode="numeric"
+                      placeholder="e.g. 25"
+                      maxLength={2}
+                      placeholderTextColor={colors.onSurfaceSecondary}
+                      style={styles.input}
+                    />
+                    <Text style={styles.inputHint}>Pay by day (1-31)</Text>
+                  </View>
+                </View>
+
+                {/* Credit Limit */}
+                <View style={[styles.inputGroup, { marginTop: spacing.sm }]}>
+                  <Text style={styles.inputLabel}>Credit Limit (RM)</Text>
+                  <TextInput
+                    value={limit}
+                    onChangeText={setLimit}
+                    keyboardType="decimal-pad"
+                    inputMode="decimal"
+                    placeholder="e.g. 8000.00"
+                    placeholderTextColor={colors.onSurfaceSecondary}
+                    style={styles.input}
+                  />
+                  {limit && balanceNum > 0 && (
+                    <Text style={styles.inputHint}>
+                      Available Credit: {rm(Math.max(0, (parseFloat(limit) || 0) - balanceNum))}
+                    </Text>
+                  )}
+                </View>
               </View>
             )}
 
-            {/* Interest Rate for FD / Loans */}
-            {(account.type === "fd" || account.type === "loan") && (
+            {/* Loan Specific Fields: Principal, Installment, Tenure, Remaining Months */}
+            {isLoan && (
+              <View style={styles.cardDetailSection}>
+                <Text style={styles.sectionHeaderTitle}>🚘 Loan & Financing Details</Text>
+                
+                {/* Principal Amount */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Original Loan Principal (RM)</Text>
+                  <TextInput
+                    value={loanPrincipal}
+                    onChangeText={setLoanPrincipal}
+                    keyboardType="decimal-pad"
+                    inputMode="decimal"
+                    placeholder="e.g. 60000.00"
+                    placeholderTextColor={colors.onSurfaceSecondary}
+                    style={styles.input}
+                  />
+                </View>
+
+                <View style={{ flexDirection: "row", gap: spacing.md, marginTop: spacing.sm }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>Monthly Installment (RM)</Text>
+                    <TextInput
+                      value={installment}
+                      onChangeText={setInstallment}
+                      keyboardType="decimal-pad"
+                      inputMode="decimal"
+                      placeholder="e.g. 650.00"
+                      placeholderTextColor={colors.onSurfaceSecondary}
+                      style={styles.input}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>Due Day (1-31)</Text>
+                    <TextInput
+                      value={dueDay}
+                      onChangeText={setDueDay}
+                      keyboardType="number-pad"
+                      inputMode="numeric"
+                      placeholder="e.g. 1"
+                      maxLength={2}
+                      placeholderTextColor={colors.onSurfaceSecondary}
+                      style={styles.input}
+                    />
+                  </View>
+                </View>
+
+                <View style={{ flexDirection: "row", gap: spacing.md, marginTop: spacing.sm }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>Total Tenure (Months)</Text>
+                    <TextInput
+                      value={loanTenureMonths}
+                      onChangeText={setLoanTenureMonths}
+                      keyboardType="number-pad"
+                      inputMode="numeric"
+                      placeholder="e.g. 60 or 84"
+                      placeholderTextColor={colors.onSurfaceSecondary}
+                      style={styles.input}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>Remaining Months</Text>
+                    <TextInput
+                      value={loanRemainingMonths}
+                      onChangeText={setLoanRemainingMonths}
+                      keyboardType="number-pad"
+                      inputMode="numeric"
+                      placeholder="e.g. 36"
+                      placeholderTextColor={colors.onSurfaceSecondary}
+                      style={styles.input}
+                    />
+                  </View>
+                </View>
+
+                <View style={[styles.inputGroup, { marginTop: spacing.sm }]}>
+                  <Text style={styles.inputLabel}>Interest Rate % p.a.</Text>
+                  <TextInput
+                    value={rate}
+                    onChangeText={setRate}
+                    keyboardType="decimal-pad"
+                    inputMode="decimal"
+                    placeholder="e.g. 3.25"
+                    placeholderTextColor={colors.onSurfaceSecondary}
+                    style={styles.input}
+                  />
+                </View>
+              </View>
+            )}
+
+            {/* Interest Rate for FD */}
+            {account.type === "fd" && (
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>
-                  {account.type === "loan" ? "Interest Rate %" : "Return Rate (APY) %"}
-                </Text>
+                <Text style={styles.inputLabel}>Return Rate (APY) %</Text>
                 <TextInput
                   value={rate}
                   onChangeText={setRate}
@@ -244,8 +439,8 @@ export function EditAccountModal({
               </View>
             )}
 
-            {/* Due Day & Installment for Liabilities */}
-            {isDebt && (
+            {/* Other Liabilities fallback (not card and not loan) */}
+            {isDebt && !isCard && !isLoan && (
               <View style={{ flexDirection: "row", gap: spacing.md, marginTop: spacing.md }}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.inputLabel}>Due Day (1 - 31)</Text>
@@ -442,5 +637,50 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.onSurface,
     marginTop: 4,
+  },
+  cardDetailSection: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    gap: 8,
+  },
+  sectionHeaderTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: colors.onSurface,
+    marginBottom: 4,
+  },
+  inputHint: {
+    fontSize: 11,
+    color: colors.onSurfaceSecondary,
+    marginTop: 3,
+  },
+  clearedToggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    marginVertical: 4,
+  },
+  clearedToggleRowActive: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
+  },
+  clearedToggleTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.onSurface,
+  },
+  clearedToggleSub: {
+    fontSize: 10.5,
+    color: colors.onSurfaceSecondary,
+    marginTop: 1,
   },
 });

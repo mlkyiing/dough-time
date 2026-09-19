@@ -19,6 +19,7 @@ import * as Haptics from "expo-haptics";
 import { colors, radius, shadow, spacing } from "@/src/theme";
 import {
   calculateHourlyRate,
+  checkAndProcessRecurringDue,
   deleteTransaction,
   getAccounts,
   getBudgetSettings,
@@ -111,6 +112,11 @@ export default function HomeDashboard() {
   useFocusEffect(
     useCallback(() => {
       loadData();
+      checkAndProcessRecurringDue()
+        .then((count) => {
+          if (count > 0) loadData();
+        })
+        .catch(() => {});
       mergeWithCloud().then(() => loadData()).catch(() => {});
       const unsub = subscribeSyncStatus((st, sess) => {
         setSyncStatus(st);
@@ -122,6 +128,7 @@ export default function HomeDashboard() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
+    await checkAndProcessRecurringDue().catch(() => {});
     await mergeWithCloud().catch(() => {});
     await loadData();
     setRefreshing(false);
@@ -206,16 +213,18 @@ export default function HomeDashboard() {
   const monthWorkHours = amountToWorkHours(monthSpending, wage.hourlyRate);
   const bobaReaction = getBobaReaction(monthWorkHours);
 
+  // Segregated Must-Haves vs Guilt-Free Comfort / Nonsense Funds (decoupled from debt obligations)
+  const bucketSpending = calculateBucketSpending(transactions, thisMonth, budget);
+  const livingSpend = bucketSpending.totalSpent;
+
   // Budget calculations & Segregated Bucket Analysis
   const budgetLimit = budget.monthlyOverallLimit || 2000;
   const budgetWorkHours = amountToWorkHours(budgetLimit, wage.hourlyRate);
-  const budgetUsedPct = Math.min(100, Math.round((monthSpending / (budgetLimit || 1)) * 100));
-  const budgetRemaining = Math.max(0, budgetLimit - monthSpending);
+  const budgetUsedPct = Math.min(100, Math.round((livingSpend / (budgetLimit || 1)) * 100));
+  const budgetRemaining = Math.max(0, budgetLimit - livingSpend);
   const budgetRemainingHours = amountToWorkHours(budgetRemaining, wage.hourlyRate);
-  const isOverBudget = monthSpending > budgetLimit;
+  const isOverBudget = livingSpend > budgetLimit;
 
-  // Segregated Must-Haves vs Guilt-Free Comfort / Nonsense Funds
-  const bucketSpending = calculateBucketSpending(transactions, thisMonth);
   const needsLimit = budget.needsLimit || Math.round(budgetLimit * 0.65);
   const comfortLimit = budget.comfortLimit || Math.round(budgetLimit * 0.25);
   const needsUsedPct = Math.min(100, Math.round((bucketSpending.needsSpent / (needsLimit || 1)) * 100));
@@ -482,11 +491,11 @@ export default function HomeDashboard() {
           <View style={styles.budgetFooter}>
             <Text style={styles.budgetPctText}>
               {isOverBudget
-                ? `⚠️ Over total budget by ${rm(monthSpending - budgetLimit)}`
+                ? `⚠️ Over living budget by ${rm(livingSpend - budgetLimit)}`
                 : `${budgetUsedPct}% used (${budgetRemainingHours.toFixed(1)}h work remaining)`}
             </Text>
             <Text style={styles.budgetSpentText}>
-              {rm(monthSpending)} / {rm(budgetLimit)}
+              {rm(livingSpend)} / {rm(budgetLimit)}
             </Text>
           </View>
 

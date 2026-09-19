@@ -21,6 +21,7 @@ import {
   addRecurringTxn,
   addTransaction,
   deleteRecurringTxn,
+  executeRecurringRule,
   getRecurringTxns,
   revertRecurringLog,
   setRecurringTxns,
@@ -55,6 +56,7 @@ export function RecurringModal({ visible, accounts, wage, onClose, onSuccess }: 
   const [dayOfMonth, setDayOfMonth] = useState("1");
   const [frequency, setFrequency] = useState<RecurringFrequency>("monthly");
   const [note, setNote] = useState("");
+  const [logNowOnSave, setLogNowOnSave] = useState(true);
 
   const currentMonth = todayISO().slice(0, 7);
 
@@ -233,7 +235,7 @@ export function RecurringModal({ visible, accounts, wage, onClose, onSuccess }: 
       await updateRecurringTxn(updated);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     } else {
-      await addRecurringTxn({
+      const created = await addRecurringTxn({
         name: name.trim(),
         amount: amt,
         type: recurringType,
@@ -247,11 +249,24 @@ export function RecurringModal({ visible, accounts, wage, onClose, onSuccess }: 
         note: note.trim() || undefined,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+
+      if (logNowOnSave) {
+        await executeRecurringRule(created);
+      }
     }
 
+    const savedName = name.trim();
+    const shouldShowLoggedAlert = !editingItem && logNowOnSave;
     resetForm();
     await loadSubscriptions();
     onSuccess();
+
+    if (shouldShowLoggedAlert) {
+      Alert.alert(
+        "Commitment Saved & Logged! 🎉",
+        `Saved "${savedName}" (${rm(amt)}) and logged this month's commitment. Your account balance has been updated!`
+      );
+    }
   };
 
   const handleDelete = (item: RecurringTxn) => {
@@ -336,51 +351,11 @@ export function RecurringModal({ visible, accounts, wage, onClose, onSuccess }: 
   };
 
   const executeLogItem = async (sub: RecurringTxn) => {
-    const isTransfer = sub.type === "transfer" || (sub.type === "savings" && Boolean(sub.toAccountId));
-
-    if (isTransfer && sub.toAccountId && sub.accountId) {
-      await transferFunds({
-        fromAccountId: sub.accountId,
-        toAccountId: sub.toAccountId,
-        amount: sub.amount,
-        recurringId: sub.id,
-        bucket: sub.type === "savings" ? "savings" : undefined,
-        note: `[Recurring: ${sub.name}] ${sub.note || "Monthly scheduled transfer"} 🔁`,
-        category: sub.type === "savings" ? "Savings" : "Transfer",
-        date: todayISO(),
-      });
-    } else if (sub.type === "savings") {
-      await addTransaction({
-        amount: sub.amount,
-        type: "expense",
-        bucket: "savings",
-        category: sub.category || "Savings",
-        accountId: sub.accountId,
-        merchant: sub.name,
-        note: `[Recurring: ${sub.name}] Monthly savings & stash 📈`,
-        date: todayISO(),
-        recurringId: sub.id,
-      });
-    } else {
-      const b: BudgetBucket = sub.bucket || (sub.category === "Subscriptions" ? "comfort" : "needs");
-      await addTransaction({
-        amount: sub.amount,
-        type: "expense",
-        bucket: b,
-        category: sub.category || "Bills",
-        accountId: sub.accountId,
-        merchant: sub.name,
-        note: `[Recurring: ${sub.name}] ${sub.note || `Monthly ${sub.frequency} bill`} 🔁`,
-        date: todayISO(),
-        recurringId: sub.id,
-      });
-    }
-
+    await executeRecurringRule(sub);
     const updated = subscriptions.map((s) =>
       s.id === sub.id ? { ...s, lastLoggedMonth: currentMonth } : s
     );
-    await setRecurringTxns(updated);
-    await updateRecurringTxn({ ...sub, lastLoggedMonth: currentMonth });
+    setSubscriptions(updated);
   };
 
   const handleLogSingleNow = async (item: RecurringTxn) => {
@@ -658,29 +633,70 @@ export function RecurringModal({ visible, accounts, wage, onClose, onSuccess }: 
                 </View>
 
                 {/* Account Selection */}
-                <View style={{ marginTop: 12 }}>
-                  <AccountSelectDropdown
-                    label={recurringType === "savings" ? "Deduct / Fund From Account" : "Pay From Account"}
-                    value={accountId || accounts[0]?.id}
-                    onChange={setAccountId}
-                    accounts={accounts}
-                    placeholder="Select payment account"
-                  />
-                </View>
+                {recurringType === "savings" ? (
+                  <View style={styles.savingsFlowBox}>
+                    <Text style={styles.savingsFlowBoxTitle}>💰 SAVINGS FLOW & ACCOUNTS</Text>
+                    <Text style={styles.savingsFlowBoxSub}>
+                      Money will transfer from your spending account to grow your savings fund:
+                    </Text>
 
-                {(recurringType === "savings" || recurringType === "transfer") && (
-                  <View style={{ marginTop: 10 }}>
                     <AccountSelectDropdown
-                      label={
-                        recurringType === "savings"
-                          ? "Transfer Into Account (Optional, e.g. ASNB, Tabung, Stash)"
-                          : "Transfer Into Destination Account *"
-                      }
+                      label="1. Deduct From (Source / Salary Account)"
+                      value={accountId || accounts[0]?.id}
+                      onChange={setAccountId}
+                      accounts={accounts}
+                      placeholder="Select funding account (e.g. Maybank)"
+                    />
+
+                    <View style={{ alignItems: "center", marginVertical: 4 }}>
+                      <Ionicons name="arrow-down-circle" size={22} color="#10B981" />
+                    </View>
+
+                    <AccountSelectDropdown
+                      label="2. Deposit Into (Target Savings / Fund Account)"
                       value={toAccountId}
                       onChange={setToAccountId}
                       accounts={accounts}
                       excludeId={accountId || accounts[0]?.id}
-                      placeholder={recurringType === "savings" ? "None (Keep in virtual savings bucket)" : "Select target account"}
+                      placeholder="Select savings account (e.g. Travel Fund, Tabung, ASNB)"
+                    />
+
+                    {/* Flow Preview Badge */}
+                    <View style={styles.savingsLiveBadge}>
+                      <Ionicons name="trending-up" size={16} color="#059669" />
+                      <Text style={styles.savingsLiveText}>
+                        {toAccountId
+                          ? `${accounts.find((a) => a.id === (accountId || accounts[0]?.id))?.name || "Source"} (-${rm(parseFloat(amountStr) || 0)}) ➔ ${accounts.find((a) => a.id === toAccountId)?.name || "Target"} (+${rm(parseFloat(amountStr) || 0)}) 📈`
+                          : `Direct Deposit into ${accounts.find((a) => a.id === (accountId || accounts[0]?.id))?.name || "Account"} (+${rm(parseFloat(amountStr) || 0)}) 📈`}
+                      </Text>
+                    </View>
+                  </View>
+                ) : recurringType === "transfer" ? (
+                  <View style={{ gap: 10, marginTop: 12 }}>
+                    <AccountSelectDropdown
+                      label="Pay / Transfer From"
+                      value={accountId || accounts[0]?.id}
+                      onChange={setAccountId}
+                      accounts={accounts}
+                      placeholder="Select source account"
+                    />
+                    <AccountSelectDropdown
+                      label="Transfer Into Destination Account *"
+                      value={toAccountId}
+                      onChange={setToAccountId}
+                      accounts={accounts}
+                      excludeId={accountId || accounts[0]?.id}
+                      placeholder="Select target account"
+                    />
+                  </View>
+                ) : (
+                  <View style={{ marginTop: 12 }}>
+                    <AccountSelectDropdown
+                      label="Pay From Account"
+                      value={accountId || accounts[0]?.id}
+                      onChange={setAccountId}
+                      accounts={accounts}
+                      placeholder="Select payment account"
                     />
                   </View>
                 )}
@@ -694,6 +710,26 @@ export function RecurringModal({ visible, accounts, wage, onClose, onSuccess }: 
                   placeholderTextColor={colors.onSurfaceSecondary}
                   style={styles.input}
                 />
+
+                {/* Auto-Log for this month */}
+                {!editingItem && (
+                  <Pressable
+                    style={styles.logNowToggleRow}
+                    onPress={() => setLogNowOnSave(!logNowOnSave)}
+                  >
+                    <Ionicons
+                      name={logNowOnSave ? "checkbox" : "square-outline"}
+                      size={22}
+                      color={logNowOnSave ? colors.brandPrimary : colors.onSurfaceSecondary}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.logNowToggleTitle}>Log transaction for this month now ⚡</Text>
+                      <Text style={styles.logNowToggleSub}>
+                        Applies immediately and updates account balances right away.
+                      </Text>
+                    </View>
+                  </Pressable>
+                )}
 
                 {/* Action Buttons */}
                 <View style={{ flexDirection: "row", gap: 8, marginTop: 14 }}>
@@ -861,6 +897,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 28,
     maxHeight: "92%",
     paddingBottom: Platform.OS === "ios" ? 34 : spacing.lg,
+    maxWidth: 680,
+    width: "100%",
+    alignSelf: "center",
   },
   header: {
     flexDirection: "row",
@@ -1246,5 +1285,62 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "800",
+  },
+  savingsFlowBox: {
+    backgroundColor: "#F0FDF4",
+    borderWidth: 1.5,
+    borderColor: "#86EFAC",
+    borderRadius: radius.md,
+    padding: spacing.sm + 2,
+    marginTop: 12,
+  },
+  savingsFlowBoxTitle: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#166534",
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  savingsFlowBoxSub: {
+    fontSize: 11,
+    color: "#15803D",
+    marginBottom: 8,
+  },
+  savingsLiveBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: radius.sm,
+    marginTop: 8,
+  },
+  savingsLiveText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#166534",
+    flex: 1,
+  },
+  logNowToggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+    marginTop: 12,
+  },
+  logNowToggleTitle: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: colors.onSurface,
+  },
+  logNowToggleSub: {
+    fontSize: 10.5,
+    color: colors.onSurfaceSecondary,
+    marginTop: 1,
   },
 });

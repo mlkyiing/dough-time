@@ -13,15 +13,20 @@ export type Account = {
   type: AccountType;
   emoji: string;
   color: string;
-  balance: number; // For assets: balance. For liabilities (credit card / loan): amount owed.
+  balance: number; // For assets: balance. For liabilities (credit card / loan): amount owed (total outstanding).
   creditLimit?: number; // Optional limit for credit cards
   interestRate?: number; // Optional APY for FD or APR for Loans
+  // Credit Card Statement & Cycle Details 💳
+  statementBalance?: number; // Last statement amount billed that needs to be paid
+  statementCutoffDay?: number; // 1 to 31 (day of month when statement is cut)
+  statementCleared?: boolean; // Whether current cycle statement has been paid
   // Repayment & Loan Reminder Settings 🔔
-  dueDay?: number; // 1 to 31 (day of month)
+  dueDay?: number; // 1 to 31 (day of month when payment is due)
   monthlyInstallment?: number; // e.g. RM 650
   reminderEnabled?: boolean;
   reminderDaysBefore?: number; // 1, 2, 3, or 5 days before due date
   loanTenureMonths?: number; // e.g. 60 (5 yrs) or 84 (7 yrs)
+  loanRemainingMonths?: number; // e.g. 36 months remaining
   loanPrincipal?: number; // Original loan amount
   loanType?: "car" | "mortgage" | "personal" | "study";
   updatedAt?: string;
@@ -37,7 +42,7 @@ export type Transaction = {
   toAccountId?: string; // Destination account for transfers
   note?: string;
   merchant?: string;
-  date: string; // ISO
+  date: string; // ISO YYYY-MM-DD
   createdAt: string;
   taxReliefCode?: string;
   recurringId?: string; // Links transaction to its parent recurring rule
@@ -75,7 +80,23 @@ export type BudgetSettings = {
   savingsTarget?: number; // Protected savings / rainy-day stash
   allocationPreset?: AllocationPreset;
   categoryBudgets: CategoryBudget[];
+  includedCategories?: string[]; // Categories user chooses to include in the Monthly Life Budget
+  customNeedsCategories?: string[]; // Explicit categories designated as Needs
+  customComfortCategories?: string[]; // Explicit categories designated as Comfort
   enabled: boolean;
+};
+
+export type SavingsGoal = {
+  id: string;
+  title: string; // e.g. "Tokyo Trip 2026", "Emergency Stash"
+  targetAmount: number; // e.g. RM 5000
+  currentAmount?: number; // Can link to an account balance or manual
+  targetDate?: string; // YYYY-MM-DD
+  accountId?: string; // Linked account e.g. "Travel Fund"
+  category?: string; // "Travel", "Gadget", "Emergency", etc.
+  emoji: string;
+  color?: string;
+  notes?: string;
 };
 
 export type PaydayAllocationType = "loan" | "savings" | "obligation" | "allowance";

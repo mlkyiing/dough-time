@@ -638,7 +638,13 @@ export default function ScanModal() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
+  container: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    maxWidth: 640,
+    width: "100%",
+    alignSelf: "center",
+  },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
