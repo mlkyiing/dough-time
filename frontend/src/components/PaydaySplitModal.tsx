@@ -60,24 +60,63 @@ export function PaydaySplitModal({ visible, accounts, wage, onClose, onSuccess }
     setSalaryStr(String(sal));
 
     if (existing && existing.items.length > 0) {
-      setPlan(existing);
-      setItems(existing.items);
+      // Auto-heal any items missing targetAccountId
+      const healedItems = existing.items.map((item) => {
+        let targetId = item.targetAccountId;
+        const isLoan =
+          item.type === "loan" ||
+          Boolean(item.title.toLowerCase().match(/loan|pinjaman|installment|debt|car|kereta|ptptn|mortgage|rumah/));
+
+        if ((!targetId || !accounts.some((a) => a.id === targetId)) && isLoan) {
+          const match = accounts.find(
+            (a) =>
+              isLiabilityAccount(a) &&
+              (a.name.toLowerCase().includes(item.title.toLowerCase()) ||
+                item.title.toLowerCase().includes(a.name.toLowerCase()))
+          ) || accounts.find(isLiabilityAccount);
+          if (match) targetId = match.id;
+        }
+
+        return {
+          ...item,
+          type: isLoan ? "loan" : item.type,
+          targetAccountId: targetId,
+        };
+      });
+
+      // Discover any loan accounts in user's accounts not yet present in payday items
+      const existingTargetIds = new Set(healedItems.map((i) => i.targetAccountId).filter(Boolean));
+      const loans = accounts.filter(isLiabilityAccount);
+      for (const l of loans) {
+        if (!existingTargetIds.has(l.id)) {
+          healedItems.unshift({
+            id: `auto_${l.id}`,
+            title: l.name,
+            type: "loan",
+            targetAccountId: l.id,
+            amount: l.monthlyInstallment || (l.balance > 0 ? Math.min(l.balance, 600) : 500),
+            enabled: true,
+            note: `Monthly repayment for ${l.name}`,
+          });
+        }
+      }
+
+      setPlan({ ...existing, items: healedItems });
+      setItems(healedItems);
     } else {
       // Auto-generate sensible default Malaysian payday template from user's loans
       const autoItems: PaydayAllocationItem[] = [];
       const loans = accounts.filter(isLiabilityAccount);
       for (const l of loans) {
-        if (l.monthlyInstallment && l.monthlyInstallment > 0) {
-          autoItems.push({
-            id: `auto_${l.id}`,
-            title: l.name,
-            type: "loan",
-            targetAccountId: l.id,
-            amount: l.monthlyInstallment,
-            enabled: true,
-            note: `Monthly repayment for ${l.name}`,
-          });
-        }
+        autoItems.push({
+          id: `auto_${l.id}`,
+          title: l.name,
+          type: "loan",
+          targetAccountId: l.id,
+          amount: l.monthlyInstallment || (l.balance > 0 ? Math.min(l.balance, 600) : 500),
+          enabled: true,
+          note: `Monthly repayment for ${l.name}`,
+        });
       }
 
       // Add family allowance default
@@ -136,17 +175,48 @@ export function PaydaySplitModal({ visible, accounts, wage, onClose, onSuccess }
     setItems((prev) => prev.filter((i) => i.id !== id));
   };
 
+  const handleSelectNewType = (type: "loan" | "savings" | "allowance") => {
+    setNewType(type);
+    if (type === "loan") {
+      const firstLoan = accounts.find(isLiabilityAccount);
+      if (firstLoan) setNewTargetId(firstLoan.id);
+    } else if (type === "savings") {
+      const firstAsset = accounts.find((a) => a.id !== sourceAccId && isAssetAccount(a));
+      if (firstAsset) setNewTargetId(firstAsset.id);
+    } else {
+      setNewTargetId("");
+    }
+  };
+
+  const handleUpdateItemTarget = (itemId: string, targetId: string) => {
+    Haptics.selectionAsync().catch(() => {});
+    setItems((prev) =>
+      prev.map((i) => (i.id === itemId ? { ...i, targetAccountId: targetId } : i))
+    );
+  };
+
   const handleAddItem = () => {
     if (!newTitle.trim()) return;
     const amt = parseFloat(newAmount.replace(/,/g, "")) || 0;
     if (amt <= 0) return;
+
+    let targetId = newTargetId;
+    if (newType === "loan" && !targetId) {
+      const match = accounts.find(
+        (a) =>
+          isLiabilityAccount(a) &&
+          (a.name.toLowerCase().includes(newTitle.toLowerCase()) ||
+            newTitle.toLowerCase().includes(a.name.toLowerCase()))
+      ) || accounts.find(isLiabilityAccount);
+      if (match) targetId = match.id;
+    }
 
     const newItem: PaydayAllocationItem = {
       id: `item_${Date.now()}`,
       title: newTitle.trim(),
       type: newType,
       amount: amt,
-      targetAccountId: newTargetId || undefined,
+      targetAccountId: targetId || undefined,
       category: newType === "loan" ? "Loan / Debt" : newType === "savings" ? "Investment" : "Other",
       enabled: true,
     };
@@ -306,19 +376,19 @@ export function PaydaySplitModal({ visible, accounts, wage, onClose, onSuccess }
                     />
                     <Pressable
                       style={[styles.typeBtn, newType === "loan" && styles.typeBtnActive]}
-                      onPress={() => setNewType("loan")}
+                      onPress={() => handleSelectNewType("loan")}
                     >
                       <Text style={styles.typeBtnText}>Loan</Text>
                     </Pressable>
                     <Pressable
                       style={[styles.typeBtn, newType === "savings" && styles.typeBtnActive]}
-                      onPress={() => setNewType("savings")}
+                      onPress={() => handleSelectNewType("savings")}
                     >
                       <Text style={styles.typeBtnText}>Savings</Text>
                     </Pressable>
                     <Pressable
                       style={[styles.typeBtn, newType === "allowance" && styles.typeBtnActive]}
-                      onPress={() => setNewType("allowance")}
+                      onPress={() => handleSelectNewType("allowance")}
                     >
                       <Text style={styles.typeBtnText}>Other</Text>
                     </Pressable>
@@ -352,30 +422,86 @@ export function PaydaySplitModal({ visible, accounts, wage, onClose, onSuccess }
                 {items.map((item) => {
                   const targetAcc = accounts.find((a) => a.id === item.targetAccountId);
                   const icon = item.type === "loan" ? "🚘" : item.type === "savings" ? "📈" : "🎁";
+                  const liabilityAccounts = accounts.filter(isLiabilityAccount);
+                  const isUnlinkedLoan = item.type === "loan" && !targetAcc;
+                  const isUnlinkedSavings = item.type === "savings" && !targetAcc;
+
                   return (
                     <View key={item.id} style={[styles.itemCard, !item.enabled && { opacity: 0.5 }]}>
-                      <Pressable onPress={() => toggleItem(item.id)} style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
-                        <Ionicons
-                          name={item.enabled ? "checkmark-circle" : "ellipse-outline"}
-                          size={22}
-                          color={item.enabled ? colors.brandPrimary : colors.onSurfaceSecondary}
-                        />
-                        <View style={{ flex: 1 }}>
-                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                            <Text style={{ fontSize: 16 }}>{icon}</Text>
-                            <Text style={styles.itemTitle} numberOfLines={1}>{item.title}</Text>
-                          </View>
-                          <Text style={styles.itemSub} numberOfLines={1}>
-                            {targetAcc ? `Transfer to ${targetAcc.name}` : item.note || "Payday allocation"}
-                          </Text>
-                        </View>
-                      </Pressable>
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                          <Pressable onPress={() => toggleItem(item.id)} style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+                            <Ionicons
+                              name={item.enabled ? "checkmark-circle" : "ellipse-outline"}
+                              size={22}
+                              color={item.enabled ? colors.brandPrimary : colors.onSurfaceSecondary}
+                            />
+                            <View style={{ flex: 1 }}>
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                <Text style={{ fontSize: 16 }}>{icon}</Text>
+                                <Text style={styles.itemTitle} numberOfLines={1}>{item.title}</Text>
+                              </View>
+                              <Text style={styles.itemSub} numberOfLines={1}>
+                                {targetAcc
+                                  ? item.type === "loan"
+                                    ? `➔ Repays ${targetAcc.name} (Debt: -${rm(targetAcc.balance)})`
+                                    : `➔ Transfers to ${targetAcc.name}`
+                                  : item.note || "Payday allocation"}
+                              </Text>
+                            </View>
+                          </Pressable>
 
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                        <Text style={styles.itemAmount}>{rm(item.amount)}</Text>
-                        <Pressable hitSlop={6} onPress={() => removeItem(item.id)}>
-                          <Ionicons name="trash-outline" size={16} color="#EF4444" />
-                        </Pressable>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                            <Text style={styles.itemAmount}>{rm(item.amount)}</Text>
+                            <Pressable hitSlop={6} onPress={() => removeItem(item.id)}>
+                              <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                            </Pressable>
+                          </View>
+                        </View>
+
+                        {/* Unlinked Loan Warning with 1-tap Account Binding */}
+                        {isUnlinkedLoan && liabilityAccounts.length > 0 && (
+                          <View style={styles.unlinkedWarning}>
+                            <Text style={styles.unlinkedWarningText}>
+                              ⚠️ Not linked to loan account! Tap below to sync balance:
+                            </Text>
+                            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+                              {liabilityAccounts.map((acc) => (
+                                <Pressable
+                                  key={acc.id}
+                                  onPress={() => handleUpdateItemTarget(item.id, acc.id)}
+                                  style={styles.unlinkedChip}
+                                >
+                                  <Text style={styles.unlinkedChipText}>
+                                    {acc.emoji} {acc.name}
+                                  </Text>
+                                </Pressable>
+                              ))}
+                            </View>
+                          </View>
+                        )}
+
+                        {/* Unlinked Savings Warning with 1-tap Account Binding */}
+                        {isUnlinkedSavings && (
+                          <View style={styles.unlinkedWarning}>
+                            <Text style={styles.unlinkedWarningText}>
+                              ⚠️ Pick destination account for savings transfer:
+                            </Text>
+                            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+                              {accounts.filter(isAssetAccount).filter((a) => a.id !== sourceAccId).map((acc) => (
+                                <Pressable
+                                  key={acc.id}
+                                  onPress={() => handleUpdateItemTarget(item.id, acc.id)}
+                                  style={styles.unlinkedChip}
+                                >
+                                  <Text style={styles.unlinkedChipText}>
+                                    {acc.emoji} {acc.name}
+                                  </Text>
+                                </Pressable>
+                              ))}
+                            </View>
+                          </View>
+                        )}
                       </View>
                     </View>
                   );
@@ -440,6 +566,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.55)",
     justifyContent: "flex-end",
+    alignItems: "center",
   },
   sheet: {
     backgroundColor: colors.surface,
@@ -447,6 +574,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 28,
     maxHeight: "92%",
     paddingBottom: Platform.OS === "ios" ? 34 : spacing.lg,
+    maxWidth: 680,
+    width: "100%",
+    alignSelf: "center",
   },
   header: {
     flexDirection: "row",
@@ -733,5 +863,31 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "800",
+  },
+  unlinkedWarning: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: "#FFFBEB",
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+  },
+  unlinkedWarningText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#B45309",
+  },
+  unlinkedChip: {
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: "#F59E0B",
+  },
+  unlinkedChipText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#92400E",
   },
 });

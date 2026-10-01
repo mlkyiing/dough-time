@@ -161,12 +161,14 @@ export async function initOrGetSyncSession(): Promise<SyncSession> {
  */
 export async function pushCloudBackup(): Promise<{ success: boolean; message?: string; session?: SyncSession }> {
   const session = await initOrGetSyncSession();
-  const [accounts, transactions, wage, budget, recurring] = await Promise.all([
+  const [accounts, transactions, wage, budget, recurring, payday, goals] = await Promise.all([
     getAccounts(),
     getTransactions(),
     getWageSettings(),
     getBudgetSettings(),
     getRecurringTxns(),
+    getPaydayPlan(),
+    getSavingsGoals(),
   ]);
 
   const nowIso = new Date().toISOString();
@@ -185,6 +187,8 @@ export async function pushCloudBackup(): Promise<{ success: boolean; message?: s
         wage_settings: wage,
         budget_settings: budget,
         recurring_txns: recurring,
+        payday_plan: payday,
+        savings_goals: goals,
         last_modified: nowIso,
       }),
     });
@@ -237,6 +241,8 @@ export async function pullCloudRestore(
     if (data.wage_settings) await setWageSettings(data.wage_settings, false);
     if (data.budget_settings) await setBudgetSettings(data.budget_settings, false);
     if (data.recurring_txns) await setRecurringTxns(data.recurring_txns);
+    if (data.payday_plan) await setPaydayPlan(data.payday_plan);
+    if (data.savings_goals && data.savings_goals.length > 0) await setSavingsGoals(data.savings_goals);
     await AsyncStorage.setItem(K_SEED, "1");
 
     const newSession: SyncSession = {
@@ -302,7 +308,7 @@ async function clearDeletedAccountIds(ids: string[]) {
  */
 export async function mergeWithCloud(): Promise<{ success: boolean; message?: string }> {
   const session = await initOrGetSyncSession();
-  const [accounts, transactions, wage, budget, deletedTxnIds, deletedAccIds, recurring] = await Promise.all([
+  const [accounts, transactions, wage, budget, deletedTxnIds, deletedAccIds, recurring, payday, goals] = await Promise.all([
     getAccounts(),
     getTransactions(),
     getWageSettings(),
@@ -310,6 +316,8 @@ export async function mergeWithCloud(): Promise<{ success: boolean; message?: st
     getDeletedTxnIds(),
     getDeletedAccountIds(),
     getRecurringTxns(),
+    getPaydayPlan(),
+    getSavingsGoals(),
   ]);
 
   notifySync("syncing", session);
@@ -329,6 +337,8 @@ export async function mergeWithCloud(): Promise<{ success: boolean; message?: st
         wage_settings: wage,
         budget_settings: budget,
         recurring_txns: recurring,
+        payday_plan: payday,
+        savings_goals: goals,
         last_modified: new Date().toISOString(),
       }),
     });
@@ -344,6 +354,8 @@ export async function mergeWithCloud(): Promise<{ success: boolean; message?: st
     if (data.wage_settings) await setWageSettings(data.wage_settings, false);
     if (data.budget_settings) await setBudgetSettings(data.budget_settings, false);
     if (data.recurring_txns) await setRecurringTxns(data.recurring_txns);
+    if (data.payday_plan && !payday) await setPaydayPlan(data.payday_plan);
+    if (data.savings_goals && data.savings_goals.length > 0) await setSavingsGoals(data.savings_goals);
 
     // Clear processed tombstones
     if (deletedTxnIds.length > 0) await clearDeletedTxnIds(deletedTxnIds);
@@ -627,6 +639,14 @@ function applyTransactionToAccounts(
       let delta = isToLiability ? -amount : amount;
       if (reverse) delta = -delta;
       toAcc.balance = +(toAcc.balance + delta).toFixed(2);
+
+      // If repaying loan, decrement tenure remaining
+      if (toAcc.type === "loan" && !reverse && toAcc.loanRemainingMonths && toAcc.loanRemainingMonths > 0) {
+        toAcc.loanRemainingMonths = Math.max(0, toAcc.loanRemainingMonths - 1);
+      } else if (toAcc.type === "credit_card" && !reverse) {
+        toAcc.statementCleared = true;
+      }
+
       toAcc.updatedAt = nowIso;
     }
     return;
@@ -916,22 +936,70 @@ export async function executePaydayPlan(
   for (const item of plan.items) {
     if (!item.enabled || item.amount <= 0) continue;
 
-    if (item.type === "loan" || item.type === "savings") {
-      if (item.targetAccountId) {
-        await transferFunds({
-          fromAccountId: plan.sourceAccountId,
-          toAccountId: item.targetAccountId,
-          amount: item.amount,
-          date: executionDate,
-          note: item.note || `Payday auto-allocation: ${item.title}`,
-        });
+    // Check if this item is a loan repayment (by explicit type or title detection)
+    const isLoan =
+      item.type === "loan" ||
+      Boolean(item.title.toLowerCase().match(/loan|pinjaman|installment|debt|car|kereta|ptptn|mortgage|rumah|hire purchase/));
+
+    const isSavings =
+      item.type === "savings" ||
+      Boolean(item.title.toLowerCase().match(/stash|savings|tabung|asnb|travel|emergency|fund/));
+
+    let targetAccId = item.targetAccountId;
+    let targetAcc = targetAccId ? accounts.find((a) => a.id === targetAccId) : null;
+
+    // Auto-resolve missing or broken target account
+    if (!targetAcc) {
+      if (isLoan) {
+        // 1. Exact name match among liability accounts
+        targetAcc = accounts.find(
+          (a) => isLiabilityAccount(a) && a.name.trim().toLowerCase() === item.title.trim().toLowerCase()
+        ) || null;
+
+        // 2. Partial name match among liability accounts
+        if (!targetAcc) {
+          targetAcc = accounts.find(
+            (a) =>
+              isLiabilityAccount(a) &&
+              (a.name.toLowerCase().includes(item.title.toLowerCase()) ||
+                item.title.toLowerCase().includes(a.name.toLowerCase()))
+          ) || null;
+        }
+
+        // 3. Fallback: First loan/liability account if user only has 1 or 2 loans
+        if (!targetAcc) {
+          targetAcc = accounts.find(isLiabilityAccount) || null;
+        }
+      } else if (isSavings) {
+        targetAcc = accounts.find(
+          (a) =>
+            (a.type === "fd" || a.type === "investment" || a.name.toLowerCase().match(/savings|stash|travel|tabung|asnb/)) &&
+            (a.name.toLowerCase().includes(item.title.toLowerCase()) || item.title.toLowerCase().includes(a.name.toLowerCase()))
+        ) || accounts.find((a) => a.type === "fd" || a.type === "investment") || null;
       }
+
+      if (targetAcc) {
+        targetAccId = targetAcc.id;
+        item.targetAccountId = targetAcc.id; // Auto-link for future payday executions
+      }
+    }
+
+    if ((isLoan || isSavings) && targetAccId) {
+      await transferFunds({
+        fromAccountId: plan.sourceAccountId,
+        toAccountId: targetAccId,
+        amount: item.amount,
+        date: executionDate,
+        category: isLoan ? "Loan / Debt" : "Savings",
+        bucket: isLoan ? undefined : "savings",
+        note: item.note || (isLoan ? `Payday repayment for ${item.title}` : `Payday savings for ${item.title}`),
+      });
     } else {
-      // Obligation / Allowance / Other
+      // Obligation / Allowance / Other (or unlinked loan recorded as direct expense)
       await addTransaction({
         amount: item.amount,
         type: "expense",
-        category: item.category || "Other",
+        category: isLoan ? "Loan / Debt" : (item.category || "Other"),
         accountId: plan.sourceAccountId,
         merchant: item.title,
         note: item.note || `Payday allocation: ${item.title}`,

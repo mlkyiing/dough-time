@@ -115,6 +115,8 @@ class VaultPushRequest(BaseModel):
     wage_settings: Optional[dict] = None
     budget_settings: Optional[dict] = None
     recurring_txns: List[dict] = []
+    payday_plan: Optional[dict] = None
+    savings_goals: List[dict] = []
     last_modified: Optional[str] = None
 
 class VaultMergeRequest(BaseModel):
@@ -127,6 +129,8 @@ class VaultMergeRequest(BaseModel):
     wage_settings: Optional[dict] = None
     budget_settings: Optional[dict] = None
     recurring_txns: List[dict] = []
+    payday_plan: Optional[dict] = None
+    savings_goals: List[dict] = []
     last_modified: Optional[str] = None
 
 class VaultDataResponse(BaseModel):
@@ -138,6 +142,8 @@ class VaultDataResponse(BaseModel):
     wage_settings: Optional[dict] = None
     budget_settings: Optional[dict] = None
     recurring_txns: List[dict] = []
+    payday_plan: Optional[dict] = None
+    savings_goals: List[dict] = []
     last_modified: str
     message: Optional[str] = None
 
@@ -599,6 +605,8 @@ async def sync_push(req: VaultPushRequest):
             "wage_settings": req.wage_settings,
             "budget_settings": req.budget_settings,
             "recurring_txns": req.recurring_txns,
+            "payday_plan": req.payday_plan,
+            "savings_goals": req.savings_goals,
             "last_modified": now_iso,
         }
         
@@ -624,6 +632,8 @@ async def sync_push(req: VaultPushRequest):
             wage_settings=req.wage_settings,
             budget_settings=req.budget_settings,
             recurring_txns=req.recurring_txns,
+            payday_plan=req.payday_plan,
+            savings_goals=req.savings_goals,
             last_modified=now_iso,
             message="Cloud backup successful"
         )
@@ -653,6 +663,8 @@ async def sync_pull(sync_key: str):
             wage_settings=data.get("wage_settings"),
             budget_settings=data.get("budget_settings"),
             recurring_txns=data.get("recurring_txns", []),
+            payday_plan=data.get("payday_plan"),
+            savings_goals=data.get("savings_goals", []),
             last_modified=last_modified,
             message="Cloud restore successful"
         )
@@ -678,6 +690,8 @@ async def sync_merge(req: VaultMergeRequest):
                 "wage_settings": req.wage_settings,
                 "budget_settings": req.budget_settings,
                 "recurring_txns": req.recurring_txns,
+                "payday_plan": req.payday_plan,
+                "savings_goals": req.savings_goals,
                 "last_modified": now_iso,
             }
             cur = conn.cursor()
@@ -695,6 +709,8 @@ async def sync_merge(req: VaultMergeRequest):
                 wage_settings=req.wage_settings,
                 budget_settings=req.budget_settings,
                 recurring_txns=req.recurring_txns,
+                payday_plan=req.payday_plan,
+                savings_goals=req.savings_goals,
                 last_modified=now_iso,
                 message="Cloud vault created and merged"
             )
@@ -787,6 +803,8 @@ async def sync_merge(req: VaultMergeRequest):
         merged_wage = req.wage_settings or cloud_data.get("wage_settings")
         merged_budget = req.budget_settings or cloud_data.get("budget_settings")
         merged_recurring = req.recurring_txns or cloud_data.get("recurring_txns", [])
+        merged_payday = req.payday_plan or cloud_data.get("payday_plan")
+        merged_savings_goals = req.savings_goals or cloud_data.get("savings_goals", [])
         
         merged_payload = {
             "accounts": merged_accs,
@@ -794,6 +812,8 @@ async def sync_merge(req: VaultMergeRequest):
             "wage_settings": merged_wage,
             "budget_settings": merged_budget,
             "recurring_txns": merged_recurring,
+            "payday_plan": merged_payday,
+            "savings_goals": merged_savings_goals,
             "last_modified": now_iso,
         }
         
@@ -813,6 +833,8 @@ async def sync_merge(req: VaultMergeRequest):
             wage_settings=merged_wage,
             budget_settings=merged_budget,
             recurring_txns=merged_recurring,
+            payday_plan=merged_payday,
+            savings_goals=merged_savings_goals,
             last_modified=now_iso,
             message="Merged with Cloud vault successfully"
         )
