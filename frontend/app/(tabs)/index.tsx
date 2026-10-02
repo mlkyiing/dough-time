@@ -322,6 +322,16 @@ export default function HomeDashboard() {
             </Pressable>
 
             <Pressable
+              style={({ pressed }) => [styles.headerWidgetBtn, pressed && { opacity: 0.85 }]}
+              onPress={() => {
+                Haptics.selectionAsync().catch(() => {});
+                setShowWidgetModal(true);
+              }}
+            >
+              <Ionicons name="phone-portrait-outline" size={17} color={colors.brandPrimary} />
+            </Pressable>
+
+            <Pressable
               testID="scan-ocr-btn"
               style={({ pressed }) => [styles.scanBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }]}
               onPress={() => {
@@ -602,6 +612,36 @@ export default function HomeDashboard() {
             </View>
           </Pressable>
         </View>
+
+        {/* iPhone Lock Screen Widget Prominent Feature Card */}
+        <Pressable
+          style={styles.lockscreenWidgetFeatureCard}
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            setShowWidgetModal(true);
+          }}
+        >
+          <View style={styles.widgetFeatureLeft}>
+            <View style={styles.widgetFeatureIconBadge}>
+              <Text style={{ fontSize: 24 }}>📱</Text>
+            </View>
+            <View style={{ flex: 1, gap: 2 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={styles.widgetFeatureTitle}>iPhone Lock Screen Widget</Text>
+                <View style={styles.newBadge}>
+                  <Text style={styles.newBadgeText}>LIVE</Text>
+                </View>
+              </View>
+              <Text style={styles.widgetFeatureDesc}>
+                Track your <Text style={{ fontWeight: "800", color: colors.brandPrimary }}>{rm(budgetRemaining)}</Text> available budget without unlocking your phone!
+              </Text>
+            </View>
+          </View>
+          <View style={styles.widgetFeatureAction}>
+            <Text style={styles.widgetFeatureActionText}>Preview</Text>
+            <Ionicons name="chevron-forward" size={14} color={colors.brandPrimary} />
+          </View>
+        </Pressable>
 
         {/* Mascot Life Energy Reaction Card */}
         <View style={styles.reactionCard}>
@@ -1520,15 +1560,18 @@ const styles = StyleSheet.create({
   },
   powerHubGrid: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
   },
   powerTile: {
-    flex: 1,
+    width: "31%",
+    flexGrow: 1,
+    minWidth: 95,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 6,
     alignItems: "center",
     ...shadow.soft,
@@ -1545,6 +1588,78 @@ const styles = StyleSheet.create({
     color: colors.onSurfaceSecondary,
     marginTop: 1,
     textAlign: "center",
+  },
+  headerWidgetBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    alignItems: "center",
+    justifyContent: "center",
+    ...shadow.soft,
+  },
+  lockscreenWidgetFeatureCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1.5,
+    borderColor: "#FBCFE8",
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    ...shadow.soft,
+  },
+  widgetFeatureLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  widgetFeatureIconBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.surfaceTertiary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  widgetFeatureTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: colors.onSurface,
+  },
+  newBadge: {
+    backgroundColor: colors.brandPrimary,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: radius.pill,
+  },
+  newBadgeText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#FFFFFF",
+  },
+  widgetFeatureDesc: {
+    fontSize: 11.5,
+    color: colors.onSurfaceSecondary,
+    lineHeight: 16,
+  },
+  widgetFeatureAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: colors.surfaceTertiary,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+  },
+  widgetFeatureActionText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: colors.brandPrimary,
   },
   availableSpendBanner: {
     flexDirection: "row",
