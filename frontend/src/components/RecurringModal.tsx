@@ -20,6 +20,7 @@ import { AccountSelectDropdown } from "./AccountSelectDropdown";
 import {
   addRecurringTxn,
   addTransaction,
+  checkAndProcessRecurringDue,
   deleteRecurringTxn,
   executeRecurringRule,
   getRecurringTxns,
@@ -67,6 +68,7 @@ export function RecurringModal({ visible, accounts, wage, onClose, onSuccess }: 
   }, [visible]);
 
   const loadSubscriptions = async () => {
+    await checkAndProcessRecurringDue().catch(() => 0);
     const list = await getRecurringTxns();
     if (list.length === 0) {
       const defaultAcc = accounts[0]?.id || "";
@@ -158,8 +160,16 @@ export function RecurringModal({ visible, accounts, wage, onClose, onSuccess }: 
     setRecurringType("savings");
     setBucket("savings");
     setCategory("Savings");
-    setAccountId(accounts[0]?.id || "");
-    setToAccountId("");
+    const sourceAcc = accounts.find((a) => a.type === "bank" || a.type === "ewallet") || accounts[0];
+    const targetSavings = accounts.find(
+      (a) =>
+        a.id !== sourceAcc?.id &&
+        (a.type === "fd" ||
+          a.type === "investment" ||
+          Boolean(a.name.toLowerCase().match(/travel|savings|stash|tabung|fund|asnb|goal/)))
+    );
+    setAccountId(sourceAcc?.id || "");
+    setToAccountId(targetSavings?.id || "");
     setDayOfMonth("1");
     setFrequency("monthly");
     setNote("");
@@ -193,6 +203,17 @@ export function RecurringModal({ visible, accounts, wage, onClose, onSuccess }: 
     if (type === "savings") {
       setBucket("savings");
       setCategory("Savings");
+      if (!toAccountId) {
+        const sourceAccId = accountId || accounts[0]?.id;
+        const targetSavings = accounts.find(
+          (a) =>
+            a.id !== sourceAccId &&
+            (a.type === "fd" ||
+              a.type === "investment" ||
+              Boolean(a.name.toLowerCase().match(/travel|savings|stash|tabung|fund|asnb|goal/)))
+        );
+        if (targetSavings) setToAccountId(targetSavings.id);
+      }
     } else if (type === "transfer") {
       setBucket("needs");
       setCategory("Transfer");

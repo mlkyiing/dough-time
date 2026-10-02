@@ -241,8 +241,13 @@ export interface DueLoanInfo {
  * Checks all accounts for upcoming, due today, or overdue repayments.
  * Powers in-app reminders so the user never misses a repayment even without push notifications!
  */
-export function getDueLoanReminders(accounts: Account[], hourlyRate: number = 25.96): DueLoanInfo[] {
+export function getDueLoanReminders(
+  accounts: Account[],
+  hourlyRate: number = 25.96,
+  txns?: { toAccountId?: string; accountId: string; date: string; category?: string }[]
+): DueLoanInfo[] {
   const today = new Date();
+  const currentMonth = today.toISOString().slice(0, 7);
   const currentDay = today.getDate();
   const currentMonthDays = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
 
@@ -251,6 +256,20 @@ export function getDueLoanReminders(accounts: Account[], hourlyRate: number = 25
   for (const acc of accounts) {
     if (!isLiabilityAccount(acc.type)) continue;
     if (!acc.dueDay || acc.balance <= 0) continue;
+
+    // Skip if already paid or settled for this month
+    const isPaid =
+      acc.lastRepaymentMonth === currentMonth ||
+      (acc.type === "credit_card" && acc.statementCleared) ||
+      Boolean(
+        txns &&
+          txns.some(
+            (t) =>
+              (t.toAccountId === acc.id || (t.accountId === acc.id && t.category === "Loan / Debt")) &&
+              t.date.slice(0, 7) === currentMonth
+          )
+      );
+    if (isPaid) continue;
 
     const dueDay = Math.min(acc.dueDay, currentMonthDays);
     let diff = dueDay - currentDay;

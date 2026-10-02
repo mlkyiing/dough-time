@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -20,19 +20,23 @@ import { colors, radius, shadow, spacing } from "@/src/theme";
 import {
   addSavingsGoal,
   calculateHourlyRate,
+  checkAndProcessRecurringDue,
   deleteAccount,
   deleteSavingsGoal,
+  deleteTransaction,
   getAccounts,
   getSavingsGoals,
+  getTransactions,
   getWageSettings,
   initOrGetSyncSession,
   newAccountId,
   setWageSettings,
   subscribeSyncStatus,
   updateSavingsGoal,
+  updateTransaction,
   upsertAccount,
 } from "@/src/store";
-import { Account, AccountType, isAssetAccount, isLiabilityAccount, SavingsGoal, SyncSession, SyncStatus, WageSettings } from "@/src/types";
+import { Account, AccountType, isAssetAccount, isLiabilityAccount, SavingsGoal, SyncSession, SyncStatus, Transaction, WageSettings } from "@/src/types";
 import { ACCOUNT_TEMPLATES, AccountTemplate } from "@/src/constants";
 import { amountToWorkHours, rm } from "@/src/format";
 
@@ -49,10 +53,16 @@ import { getDueLoanReminders, DueLoanInfo } from "@/src/utils/notifications";
 import { DebtFreedomModal } from "@/src/components/DebtFreedomModal";
 import { PaydaySplitModal } from "@/src/components/PaydaySplitModal";
 import { SavingsGoalCard } from "@/src/components/SavingsGoalCard";
+import { AccountDetailModal } from "@/src/components/AccountDetailModal";
+import { TransactionDetailModal } from "@/src/components/TransactionDetailModal";
 
 export default function Accounts() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [selectedDetailAccount, setSelectedDetailAccount] = useState<Account | null>(null);
+  const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [reminderAccount, setReminderAccount] = useState<Account | null>(null);
   const [wage, setWage] = useState<WageSettings>({
@@ -90,19 +100,27 @@ export default function Accounts() {
   const [customRate, setCustomRate] = useState("");
 
   const load = useCallback(async () => {
-    const [a, w, sess, goals] = await Promise.all([
+    const [a, w, sess, goals, txns] = await Promise.all([
       getAccounts(),
       getWageSettings(),
       initOrGetSyncSession(),
       getSavingsGoals(),
+      getTransactions(),
+      checkAndProcessRecurringDue().catch(() => 0),
     ]);
     setAccounts(a);
     setWage(w);
     setSyncSession(sess);
     setSavingsGoalsList(goals);
+    setTransactions(txns);
     setTempSalary(String(w.monthlySalary));
     setTempHours(String(w.hoursPerWeek));
-  }, []);
+
+    if (selectedDetailAccount) {
+      const fresh = a.find((x) => x.id === selectedDetailAccount.id);
+      if (fresh) setSelectedDetailAccount(fresh);
+    }
+  }, [selectedDetailAccount]);
 
   const handleQuickStash = (goal: SavingsGoal, amount: number) => {
     Haptics.selectionAsync().catch(() => {});
@@ -275,10 +293,10 @@ export default function Accounts() {
   );
 
   const dueReminders = useMemo(() => {
-    return getDueLoanReminders(accounts, wage.hourlyRate).filter(
+    return getDueLoanReminders(accounts, wage.hourlyRate, transactions).filter(
       (r) => !dismissedReminders.includes(r.account.id)
     );
-  }, [accounts, wage.hourlyRate, dismissedReminders]);
+  }, [accounts, wage.hourlyRate, transactions, dismissedReminders]);
 
   const renderAccountCard = (a: Account) => {
     const isDebt = isLiabilityAccount(a.type);
@@ -299,7 +317,7 @@ export default function Accounts() {
           testID={`account-${a.id}`}
           onPress={() => {
             Haptics.selectionAsync().catch(() => {});
-            setEditingAccount(a);
+            setSelectedDetailAccount(a);
           }}
           onLongPress={() => remove(a)}
           style={({ pressed }) => [
@@ -445,6 +463,15 @@ export default function Accounts() {
       const principal = a.loanPrincipal || a.balance;
       const paidOffAmt = Math.max(0, principal - a.balance);
       const paidOffPct = principal > 0 ? Math.min(100, Math.round((paidOffAmt / principal) * 100)) : 0;
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const currentMonthName = new Date().toLocaleString("default", { month: "long" });
+      const isPaidThisMonth =
+        a.lastRepaymentMonth === currentMonth ||
+        transactions.some(
+          (t) =>
+            (t.toAccountId === a.id || (t.accountId === a.id && t.category === "Loan / Debt")) &&
+            t.date.slice(0, 7) === currentMonth
+        );
 
       return (
         <Pressable
@@ -452,7 +479,7 @@ export default function Accounts() {
           testID={`account-${a.id}`}
           onPress={() => {
             Haptics.selectionAsync().catch(() => {});
-            setEditingAccount(a);
+            setSelectedDetailAccount(a);
           }}
           onLongPress={() => remove(a)}
           style={({ pressed }) => [
@@ -478,6 +505,17 @@ export default function Accounts() {
             <View style={{ alignItems: "flex-end" }}>
               <Text style={[styles.accountBalance, { color: "#EF4444" }]}>-{rm(a.balance)}</Text>
               <Text style={styles.accountHours}>{accHours.toFixed(1)}h debt</Text>
+              {isPaidThisMonth ? (
+                <View style={styles.loanPaidBadge}>
+                  <Ionicons name="checkmark-circle" size={11} color="#059669" />
+                  <Text style={styles.loanPaidBadgeText}>Paid for {currentMonthName} ✅</Text>
+                </View>
+              ) : (
+                <View style={styles.loanDueBadge}>
+                  <Ionicons name="time-outline" size={11} color="#D97706" />
+                  <Text style={styles.loanDueBadgeText}>Due {a.dueDay ? `${a.dueDay}th` : "Monthly"}</Text>
+                </View>
+              )}
             </View>
           </View>
 
@@ -535,7 +573,7 @@ export default function Accounts() {
           {/* Actions Row */}
           <View style={styles.ccActionsRow}>
             <Pressable
-              style={[styles.ccPayBtn, { backgroundColor: "#EA580C" }]}
+              style={[styles.ccPayBtn, { backgroundColor: isPaidThisMonth ? "#059669" : "#EA580C" }]}
               onPress={(e) => {
                 e.stopPropagation?.();
                 Haptics.selectionAsync().catch(() => {});
@@ -544,9 +582,11 @@ export default function Accounts() {
                 setTransferModalOpen(true);
               }}
             >
-              <Ionicons name="swap-horizontal" size={13} color="#FFFFFF" />
+              <Ionicons name={isPaidThisMonth ? "checkmark-circle" : "swap-horizontal"} size={13} color="#FFFFFF" />
               <Text style={styles.ccPayBtnText}>
-                Deduct Repayment {a.monthlyInstallment ? `(${rm(a.monthlyInstallment)})` : ""}
+                {isPaidThisMonth
+                  ? "Paid ✓ (Deduct Extra)"
+                  : `Deduct Repayment ${a.monthlyInstallment ? `(${rm(a.monthlyInstallment)})` : ""}`}
               </Text>
             </Pressable>
 
@@ -584,7 +624,7 @@ export default function Accounts() {
         testID={`account-${a.id}`}
         onPress={() => {
           Haptics.selectionAsync().catch(() => {});
-          setEditingAccount(a);
+          setSelectedDetailAccount(a);
         }}
         onLongPress={() => remove(a)}
         style={({ pressed }) => [
@@ -1227,6 +1267,53 @@ export default function Accounts() {
         wage={wage}
         onClose={() => setShowPaydayModal(false)}
         onSuccess={load}
+      />
+
+      {/* Account Detail & Ledger Activity Modal */}
+      <AccountDetailModal
+        visible={!!selectedDetailAccount}
+        account={selectedDetailAccount}
+        accounts={accounts}
+        hourlyRate={wage.hourlyRate}
+        onClose={() => setSelectedDetailAccount(null)}
+        onEditAccount={(acc) => {
+          setSelectedDetailAccount(null);
+          setEditingAccount(acc);
+        }}
+        onTransferPress={(fromId, toId, amt) => {
+          setTransferFromId(fromId);
+          setTransferToId(toId);
+          setTransferPrefillAmount(amt);
+          setTransferModalOpen(true);
+        }}
+        onAddTxnPress={(accId) => {
+          setSelectedDetailAccount(null);
+          router.push(`/quick-add?from=${accId}` as any);
+        }}
+        onTxnPress={(txn) => {
+          setSelectedTxn(txn);
+        }}
+        onAccountUpdated={load}
+      />
+
+      {/* Transaction Detail Sheet */}
+      <TransactionDetailModal
+        visible={!!selectedTxn}
+        transaction={selectedTxn}
+        account={accounts.find((a) => a.id === selectedTxn?.accountId)}
+        accounts={accounts}
+        hourlyRate={wage.hourlyRate}
+        onClose={() => setSelectedTxn(null)}
+        onDelete={async (id) => {
+          await deleteTransaction(id);
+          setSelectedTxn(null);
+          await load();
+        }}
+        onUpdate={async (updated) => {
+          await updateTransaction(updated);
+          setSelectedTxn(null);
+          await load();
+        }}
       />
     </SafeAreaView>
   );
@@ -1984,5 +2071,39 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     alignItems: "center",
     justifyContent: "center",
+  },
+  loanPaidBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    marginTop: 4,
+  },
+  loanPaidBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#059669",
+  },
+  loanDueBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "#FFFBEB",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+    marginTop: 4,
+  },
+  loanDueBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#D97706",
   },
 });

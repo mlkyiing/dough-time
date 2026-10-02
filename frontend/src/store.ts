@@ -608,7 +608,7 @@ function adjustAccountForTransaction(
 
 function applyTransactionToAccounts(
   accs: Account[],
-  txn: Pick<Transaction, "amount" | "type" | "accountId" | "toAccountId">,
+  txn: Pick<Transaction, "amount" | "type" | "accountId" | "toAccountId"> & { date?: string },
   reverse = false
 ) {
   const { amount, type, accountId, toAccountId } = txn;
@@ -640,9 +640,14 @@ function applyTransactionToAccounts(
       if (reverse) delta = -delta;
       toAcc.balance = +(toAcc.balance + delta).toFixed(2);
 
-      // If repaying loan, decrement tenure remaining
-      if (toAcc.type === "loan" && !reverse && toAcc.loanRemainingMonths && toAcc.loanRemainingMonths > 0) {
-        toAcc.loanRemainingMonths = Math.max(0, toAcc.loanRemainingMonths - 1);
+      // If repaying loan, decrement tenure remaining and mark repayment month
+      if (toAcc.type === "loan") {
+        if (!reverse) {
+          toAcc.lastRepaymentMonth = (txn.date || nowIso).slice(0, 7);
+          if (toAcc.loanRemainingMonths && toAcc.loanRemainingMonths > 0) {
+            toAcc.loanRemainingMonths = Math.max(0, toAcc.loanRemainingMonths - 1);
+          }
+        }
       } else if (toAcc.type === "credit_card" && !reverse) {
         toAcc.statementCleared = true;
       }
@@ -1156,6 +1161,24 @@ export async function executeRecurringRule(
   sub: RecurringTxn,
   date?: string
 ): Promise<{ transaction: Transaction; accountUpdated: boolean }> {
+  // If target savings account was omitted, auto-resolve by rule name or first savings/fund account
+  if (sub.type === "savings" && !sub.toAccountId) {
+    const allAccs = await getAccounts();
+    const src = allAccs.find((a) => a.id === sub.accountId);
+    if (src && (src.type === "bank" || src.type === "ewallet" || src.type === "cash")) {
+      const match = allAccs.find(
+        (a) =>
+          a.id !== src.id &&
+          (a.name.toLowerCase().includes(sub.name.toLowerCase()) ||
+            sub.name.toLowerCase().includes(a.name.toLowerCase()) ||
+            Boolean(a.name.toLowerCase().match(/travel|savings|stash|tabung|asnb|goal/)))
+      ) || allAccs.find((a) => a.id !== src.id && (a.type === "fd" || a.type === "investment"));
+      if (match) {
+        sub.toAccountId = match.id;
+      }
+    }
+  }
+
   const isTransfer = sub.type === "transfer" || (sub.type === "savings" && Boolean(sub.toAccountId));
   const txDate = date || todayISO();
 
@@ -1237,12 +1260,26 @@ export async function executeRecurringRule(
 export async function checkAndProcessRecurringDue(): Promise<number> {
   const currentMonth = todayISO().slice(0, 7);
   const currentDay = new Date().getDate();
-  const rules = await getRecurringTxns();
+  const [rules, txns] = await Promise.all([getRecurringTxns(), getTransactions()]);
 
   let processedCount = 0;
   for (const rule of rules) {
     if (rule.enabled === false) continue;
-    if (rule.lastLoggedMonth === currentMonth) continue;
+
+    // Check if an actual transaction for this rule already exists in currentMonth
+    const alreadyHasTxn = txns.some(
+      (t) =>
+        (t.recurringId === rule.id || (t.note && t.note.includes(`[Recurring: ${rule.name}]`))) &&
+        t.date.slice(0, 7) === currentMonth
+    );
+
+    if (alreadyHasTxn) {
+      if (rule.lastLoggedMonth !== currentMonth) {
+        rule.lastLoggedMonth = currentMonth;
+      }
+      continue;
+    }
+
     if (currentDay >= (rule.dayOfMonth || 1)) {
       try {
         await executeRecurringRule(rule);
@@ -1251,6 +1288,10 @@ export async function checkAndProcessRecurringDue(): Promise<number> {
         console.warn("Failed to auto-process recurring rule", rule.name, err);
       }
     }
+  }
+
+  if (processedCount > 0) {
+    await setRecurringTxns(rules);
   }
 
   return processedCount;

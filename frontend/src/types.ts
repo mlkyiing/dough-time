@@ -29,6 +29,7 @@ export type Account = {
   loanRemainingMonths?: number; // e.g. 36 months remaining
   loanPrincipal?: number; // Original loan amount
   loanType?: "car" | "mortgage" | "personal" | "study";
+  lastRepaymentMonth?: string; // YYYY-MM e.g. "2026-10" when loan was last deducted/paid
   updatedAt?: string;
 };
 
