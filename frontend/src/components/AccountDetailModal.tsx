@@ -72,18 +72,17 @@ export function AccountDetailModal({
     }
   }, [visible, account, loadTxns]);
 
-  if (!account) return null;
+  const isDebt = account ? isLiabilityAccount(account.type) : false;
+  const isLoan = account?.type === "loan";
+  const isCard = account?.type === "credit_card";
+  const accHours = account ? amountToWorkHours(account.balance, hourlyRate) : 0;
 
-  const isDebt = isLiabilityAccount(account.type);
-  const isLoan = account.type === "loan";
-  const isCard = account.type === "credit_card";
-  const accHours = amountToWorkHours(account.balance, hourlyRate);
-
-  const currentMonth = new Date().toISOString().slice(0, 7);
-  const currentMonthName = new Date().toLocaleString("default", { month: "long" });
+  const currentMonth = useMemo(() => new Date().toISOString().slice(0, 7), []);
+  const currentMonthName = useMemo(() => new Date().toLocaleString("default", { month: "long" }), []);
 
   // Classify transactions into Inflow vs Outflow relative to this account
   const categorizedTxns = useMemo(() => {
+    if (!account) return [];
     return transactions.map((t) => {
       let isInflow = false;
       let isOutflow = false;
@@ -121,7 +120,7 @@ export function AccountDetailModal({
         counterpartName,
       };
     });
-  }, [transactions, account.id, accounts, isDebt]);
+  }, [transactions, account?.id, accounts, isDebt]);
 
   // Compute monthly Inflow and Outflow totals for current month
   const monthlyStats = useMemo(() => {
@@ -143,7 +142,7 @@ export function AccountDetailModal({
 
   // Check if loan is paid for current month
   const isLoanPaidThisMonth = useMemo(() => {
-    if (!isLoan) return false;
+    if (!isLoan || !account) return false;
     if (account.lastRepaymentMonth === currentMonth) return true;
     return categorizedTxns.some(
       (t) =>
@@ -151,7 +150,7 @@ export function AccountDetailModal({
         t.date.slice(0, 7) === currentMonth &&
         (t.type === "transfer" || t.category === "Loan / Debt")
     );
-  }, [isLoan, account.lastRepaymentMonth, currentMonth, categorizedTxns]);
+  }, [isLoan, account?.lastRepaymentMonth, currentMonth, categorizedTxns]);
 
   // Filtered list based on active tab
   const displayTxns = useMemo(() => {
@@ -181,6 +180,7 @@ export function AccountDetailModal({
   };
 
   const getAccountTypeLabel = () => {
+    if (!account) return "";
     switch (account.type) {
       case "credit_card":
         return "CREDIT CARD";
@@ -196,6 +196,8 @@ export function AccountDetailModal({
         return "BANK ACCOUNT";
     }
   };
+
+  if (!visible || !account) return null;
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>

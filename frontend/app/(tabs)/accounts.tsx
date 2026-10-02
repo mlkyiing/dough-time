@@ -1270,51 +1270,55 @@ export default function Accounts() {
       />
 
       {/* Account Detail & Ledger Activity Modal */}
-      <AccountDetailModal
-        visible={!!selectedDetailAccount}
-        account={selectedDetailAccount}
-        accounts={accounts}
-        hourlyRate={wage.hourlyRate}
-        onClose={() => setSelectedDetailAccount(null)}
-        onEditAccount={(acc) => {
-          setSelectedDetailAccount(null);
-          setEditingAccount(acc);
-        }}
-        onTransferPress={(fromId, toId, amt) => {
-          setTransferFromId(fromId);
-          setTransferToId(toId);
-          setTransferPrefillAmount(amt);
-          setTransferModalOpen(true);
-        }}
-        onAddTxnPress={(accId) => {
-          setSelectedDetailAccount(null);
-          router.push(`/quick-add?from=${accId}` as any);
-        }}
-        onTxnPress={(txn) => {
-          setSelectedTxn(txn);
-        }}
-        onAccountUpdated={load}
-      />
+      {selectedDetailAccount && (
+        <AccountDetailModal
+          visible={!!selectedDetailAccount}
+          account={selectedDetailAccount}
+          accounts={accounts}
+          hourlyRate={wage.hourlyRate}
+          onClose={() => setSelectedDetailAccount(null)}
+          onEditAccount={(acc) => {
+            setSelectedDetailAccount(null);
+            setEditingAccount(acc);
+          }}
+          onTransferPress={(fromId, toId, amt) => {
+            setTransferFromId(fromId);
+            setTransferToId(toId);
+            setTransferPrefillAmount(amt);
+            setTransferModalOpen(true);
+          }}
+          onAddTxnPress={(accId) => {
+            setSelectedDetailAccount(null);
+            router.push(`/quick-add?from=${accId}` as any);
+          }}
+          onTxnPress={(txn) => {
+            setSelectedTxn(txn);
+          }}
+          onAccountUpdated={load}
+        />
+      )}
 
       {/* Transaction Detail Sheet */}
-      <TransactionDetailModal
-        visible={!!selectedTxn}
-        transaction={selectedTxn}
-        account={accounts.find((a) => a.id === selectedTxn?.accountId)}
-        accounts={accounts}
-        hourlyRate={wage.hourlyRate}
-        onClose={() => setSelectedTxn(null)}
-        onDelete={async (id) => {
-          await deleteTransaction(id);
-          setSelectedTxn(null);
-          await load();
-        }}
-        onUpdate={async (updated) => {
-          await updateTransaction(updated);
-          setSelectedTxn(null);
-          await load();
-        }}
-      />
+      {selectedTxn && (
+        <TransactionDetailModal
+          visible={!!selectedTxn}
+          transaction={selectedTxn}
+          account={accounts.find((a) => a.id === selectedTxn.accountId)}
+          accounts={accounts}
+          hourlyRate={wage.hourlyRate}
+          onClose={() => setSelectedTxn(null)}
+          onDelete={async (id) => {
+            await deleteTransaction(id);
+            setSelectedTxn(null);
+            await load();
+          }}
+          onUpdate={async (updated) => {
+            await updateTransaction(updated);
+            setSelectedTxn(null);
+            await load();
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
