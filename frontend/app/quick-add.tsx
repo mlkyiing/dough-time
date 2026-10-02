@@ -19,11 +19,13 @@ import { addTransaction, getAccounts, getWageSettings, transferFunds } from "@/s
 import { Account, BudgetBucket, WageSettings, isLiabilityAccount } from "@/src/types";
 import { CATEGORIES, INCOME_CATEGORIES } from "@/src/constants";
 import { AccountSelectDropdown } from "@/src/components/AccountSelectDropdown";
+import { DatePickerModal } from "@/src/components/DatePickerModal";
 import {
   amountToWorkHours,
   formatTimeCost,
   getBobaReaction,
   rm,
+  shortDate,
   todayISO,
   yesterdayISO,
 } from "@/src/format";
@@ -50,7 +52,6 @@ export default function QuickAddModal() {
   const yesterdayStr = useMemo(() => yesterdayISO(), []);
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [dateModalOpen, setDateModalOpen] = useState(false);
-  const [customDateInput, setCustomDateInput] = useState(todayStr);
 
   const [recordType, setRecordType] = useState<"expense" | "income" | "transfer">(
     (params.type as any) || "expense"
@@ -472,7 +473,6 @@ export default function QuickAddModal() {
               ]}
               onPress={() => {
                 Haptics.selectionAsync().catch(() => {});
-                setCustomDateInput(selectedDate);
                 setDateModalOpen(true);
               }}
             >
@@ -491,7 +491,7 @@ export default function QuickAddModal() {
                   selectedDate !== todayStr && selectedDate !== yesterdayStr && styles.dateChipTextActive,
                 ]}
               >
-                {selectedDate !== todayStr && selectedDate !== yesterdayStr ? selectedDate : "Pick Date 📅"}
+                {selectedDate !== todayStr && selectedDate !== yesterdayStr ? shortDate(selectedDate) : "Calendar 📅"}
               </Text>
             </Pressable>
           </View>
@@ -542,78 +542,14 @@ export default function QuickAddModal() {
         </Pressable>
       </View>
 
-      {/* Custom Date Modal */}
-      <Modal visible={dateModalOpen} transparent animationType="fade" onRequestClose={() => setDateModalOpen(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setDateModalOpen(false)}>
-          <Pressable style={styles.dateModalCard} onPress={(e) => e.stopPropagation?.()}>
-            <View style={styles.dateModalHeader}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <Ionicons name="calendar" size={20} color={colors.brandPrimary} />
-                <Text style={styles.dateModalTitle}>Edit Transaction Date</Text>
-              </View>
-              <Pressable hitSlop={10} onPress={() => setDateModalOpen(false)}>
-                <Ionicons name="close" size={20} color={colors.onSurfaceSecondary} />
-              </Pressable>
-            </View>
-
-            <Text style={styles.dateModalSub}>
-              Enter date in YYYY-MM-DD format, or pick a fast preset:
-            </Text>
-
-            <TextInput
-              value={customDateInput}
-              onChangeText={setCustomDateInput}
-              placeholder="YYYY-MM-DD (e.g. 2026-09-18)"
-              placeholderTextColor={colors.onSurfaceSecondary}
-              style={styles.dateInput}
-              autoFocus
-            />
-
-            {/* Quick offset buttons */}
-            <View style={{ flexDirection: "row", gap: 6, marginVertical: 8 }}>
-              {[-3, -2, -1, 0].map((daysOffset) => {
-                const targetD = new Date();
-                targetD.setDate(targetD.getDate() + daysOffset);
-                const iso = targetD.toISOString().slice(0, 10);
-                const label = daysOffset === 0 ? "Today" : daysOffset === -1 ? "Yesterday" : `${Math.abs(daysOffset)}d ago`;
-                return (
-                  <Pressable
-                    key={daysOffset}
-                    style={styles.dateOffsetChip}
-                    onPress={() => {
-                      Haptics.selectionAsync().catch(() => {});
-                      setCustomDateInput(iso);
-                    }}
-                  >
-                    <Text style={styles.dateOffsetChipText}>{label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            <View style={styles.dateModalActions}>
-              <Pressable style={styles.dateModalCancel} onPress={() => setDateModalOpen(false)}>
-                <Text style={styles.dateModalCancelText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={styles.dateModalApply}
-                onPress={() => {
-                  const cleaned = customDateInput.trim();
-                  if (/^\d{4}-\d{2}-\d{2}$/.test(cleaned)) {
-                    setSelectedDate(cleaned);
-                    Haptics.selectionAsync().catch(() => {});
-                    setDateModalOpen(false);
-                  } else {
-                    Alert.alert("Invalid Format", "Please enter the date formatted as YYYY-MM-DD (e.g. 2026-09-15)");
-                  }
-                }}
-              >
-                <Text style={styles.dateModalApplyText}>Apply Date</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      {/* Interactive Date Picker Modal */}
+      <DatePickerModal
+        visible={dateModalOpen}
+        value={selectedDate}
+        onChange={(newDate) => setSelectedDate(newDate)}
+        onClose={() => setDateModalOpen(false)}
+        title="Transaction Date"
+      />
     </SafeAreaView>
   );
 }

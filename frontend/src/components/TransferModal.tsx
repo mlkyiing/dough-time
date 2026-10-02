@@ -15,10 +15,11 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { colors, radius, shadow, spacing } from "@/src/theme";
 import { Account, WageSettings, isLiabilityAccount } from "@/src/types";
-import { amountToWorkHours, rm, todayISO } from "@/src/format";
+import { amountToWorkHours, rm, shortDate, todayISO, yesterdayISO } from "@/src/format";
 import { transferFunds } from "@/src/store";
 import { AnimatedMascot } from "./AnimatedMascot";
 import { AccountSelectDropdown } from "./AccountSelectDropdown";
+import { DatePickerModal } from "./DatePickerModal";
 
 interface Props {
   visible: boolean;
@@ -45,6 +46,8 @@ export function TransferModal({
   const [toId, setToId] = useState<string>("");
   const [amountStr, setAmountStr] = useState<string>("");
   const [note, setNote] = useState<string>("");
+  const [transferDate, setTransferDate] = useState<string>(todayISO());
+  const [showDatePicker, setShowDatePicker] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
 
   // Asset accounts for transfer source (e.g. Bank, eWallet, Cash)
@@ -86,6 +89,7 @@ export function TransferModal({
         }
       }
       setNote("");
+      setTransferDate(todayISO());
     }
   }, [visible, preselectedFromId, preselectedToId, prefillAmount, accounts]);
 
@@ -154,7 +158,7 @@ export function TransferModal({
         amount,
         note: note.trim() || undefined,
         category: isLoanOrDebt ? "Loan / Debt" : "Transfer",
-        date: todayISO(),
+        date: transferDate || todayISO(),
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       onSuccess();
@@ -320,6 +324,59 @@ export function TransferModal({
               </View>
             )}
 
+            {/* TRANSFER DATE */}
+            <View style={styles.inputGroup}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <Text style={styles.inputLabel}>Transfer Date</Text>
+                <View style={{ flexDirection: "row", gap: 6 }}>
+                  <Pressable
+                    style={[styles.dateChipSmall, transferDate === todayISO() && styles.dateChipSmallActive]}
+                    onPress={() => {
+                      Haptics.selectionAsync().catch(() => {});
+                      setTransferDate(todayISO());
+                    }}
+                  >
+                    <Text style={[styles.dateChipSmallText, transferDate === todayISO() && styles.dateChipSmallTextActive]}>
+                      ⚡ Today
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.dateChipSmall, transferDate === yesterdayISO() && styles.dateChipSmallActive]}
+                    onPress={() => {
+                      Haptics.selectionAsync().catch(() => {});
+                      setTransferDate(yesterdayISO());
+                    }}
+                  >
+                    <Text style={[styles.dateChipSmallText, transferDate === yesterdayISO() && styles.dateChipSmallTextActive]}>
+                      🗓️ Yesterday
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              <Pressable
+                style={styles.datePickerTriggerBtn}
+                onPress={() => {
+                  Haptics.selectionAsync().catch(() => {});
+                  setShowDatePicker(true);
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <View style={styles.dateIconCircle}>
+                    <Ionicons name="calendar" size={16} color={colors.brandPrimary} />
+                  </View>
+                  <View>
+                    <Text style={styles.dateDisplayTitle}>{shortDate(transferDate || todayISO())}</Text>
+                    <Text style={styles.dateDisplaySubtitle}>{transferDate || todayISO()}</Text>
+                  </View>
+                </View>
+                <View style={styles.changeDateBadge}>
+                  <Text style={styles.changeDateBadgeText}>Pick Date</Text>
+                  <Ionicons name="calendar-outline" size={13} color={colors.brandPrimary} />
+                </View>
+              </Pressable>
+            </View>
+
             {/* NOTE / MEMO */}
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Note / Memo (Optional)</Text>
@@ -354,6 +411,14 @@ export function TransferModal({
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+
+      <DatePickerModal
+        visible={showDatePicker}
+        value={transferDate}
+        onChange={(newDate) => setTransferDate(newDate)}
+        onClose={() => setShowDatePicker(false)}
+        title="Transfer Date"
+      />
     </Modal>
   );
 }
@@ -599,5 +664,69 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "800",
     fontSize: 15,
+  },
+  dateChipSmall: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  dateChipSmallActive: {
+    backgroundColor: colors.brandPrimary,
+    borderColor: colors.brandPrimary,
+  },
+  dateChipSmallText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: colors.onSurfaceSecondary,
+  },
+  dateChipSmallTextActive: {
+    color: colors.onBrandPrimary,
+    fontWeight: "800",
+  },
+  datePickerTriggerBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  dateIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceTertiary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dateDisplayTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.onSurface,
+  },
+  dateDisplaySubtitle: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: colors.onSurfaceSecondary,
+  },
+  changeDateBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: colors.surfaceTertiary,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+  },
+  changeDateBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.brandPrimary,
   },
 });

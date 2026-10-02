@@ -14,8 +14,9 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { colors, radius, shadow, spacing } from "@/src/theme";
 import { Account, SavingsGoal, WageSettings } from "@/src/types";
-import { amountToWorkHours, rm } from "@/src/format";
+import { amountToWorkHours, rm, shortDate } from "@/src/format";
 import { AccountSelectDropdown } from "./AccountSelectDropdown";
+import { DatePickerModal } from "./DatePickerModal";
 
 interface Props {
   goals: SavingsGoal[];
@@ -47,6 +48,8 @@ export function SavingsGoalCard({
   const [accountId, setAccountId] = useState("");
   const [emoji, setEmoji] = useState("✈️");
   const [notes, setNotes] = useState("");
+  const [targetDate, setTargetDate] = useState("");
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const openAdd = () => {
     Haptics.selectionAsync().catch(() => {});
@@ -60,6 +63,7 @@ export function SavingsGoalCard({
     setAccountId(travelAcc?.id || accounts[0]?.id || "");
     setEmoji("✈️");
     setNotes("");
+    setTargetDate("");
     setModalVisible(true);
   };
 
@@ -71,6 +75,7 @@ export function SavingsGoalCard({
     setAccountId(g.accountId || "");
     setEmoji(g.emoji || "✈️");
     setNotes(g.notes || "");
+    setTargetDate(g.targetDate || "");
     setModalVisible(true);
   };
 
@@ -93,6 +98,7 @@ export function SavingsGoalCard({
         accountId: accountId || undefined,
         emoji,
         notes: notes.trim() || undefined,
+        targetDate: targetDate || undefined,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     } else {
@@ -102,6 +108,7 @@ export function SavingsGoalCard({
         accountId: accountId || undefined,
         emoji,
         notes: notes.trim() || undefined,
+        targetDate: targetDate || undefined,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     }
@@ -176,9 +183,17 @@ export function SavingsGoalCard({
                       <Text style={styles.goalTitle} numberOfLines={1}>
                         {g.title}
                       </Text>
-                      <Text style={styles.goalAccountMeta} numberOfLines={1}>
-                        {linkedAcc ? `Linked: ${linkedAcc.name} (${rm(linkedAcc.balance)})` : "Standalone Pot"}
-                      </Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
+                        <Text style={styles.goalAccountMeta} numberOfLines={1}>
+                          {linkedAcc ? `Linked: ${linkedAcc.name}` : "Standalone Pot"}
+                        </Text>
+                        {g.targetDate && (
+                          <View style={styles.targetDateTag}>
+                            <Ionicons name="flag" size={9} color={colors.brandPrimary} />
+                            <Text style={styles.targetDateTagText}>{shortDate(g.targetDate)}</Text>
+                          </View>
+                        )}
+                      </View>
                     </View>
                   </View>
 
@@ -342,6 +357,50 @@ export function SavingsGoalCard({
                 />
               </View>
 
+              {/* Target Completion Date */}
+              <View style={{ marginTop: 12 }}>
+                <Text style={styles.inputLabel}>Target Completion Date (Optional)</Text>
+                <Pressable
+                  style={styles.datePickerTriggerBtn}
+                  onPress={() => {
+                    Haptics.selectionAsync().catch(() => {});
+                    setShowDatePicker(true);
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                    <View style={styles.dateIconCircle}>
+                      <Ionicons name="calendar-outline" size={16} color={colors.brandPrimary} />
+                    </View>
+                    <View>
+                      <Text style={styles.dateDisplayTitle}>
+                        {targetDate ? shortDate(targetDate) : "No target date set"}
+                      </Text>
+                      <Text style={styles.dateDisplaySubtitle}>
+                        {targetDate ? targetDate : "Tap to pick a target deadline"}
+                      </Text>
+                    </View>
+                  </View>
+                  {targetDate ? (
+                    <Pressable
+                      hitSlop={8}
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        Haptics.selectionAsync().catch(() => {});
+                        setTargetDate("");
+                      }}
+                      style={styles.clearDateBadge}
+                    >
+                      <Text style={styles.clearDateBadgeText}>Clear</Text>
+                    </Pressable>
+                  ) : (
+                    <View style={styles.changeDateBadge}>
+                      <Text style={styles.changeDateBadgeText}>Pick Date</Text>
+                      <Ionicons name="calendar-outline" size={13} color={colors.brandPrimary} />
+                    </View>
+                  )}
+                </Pressable>
+              </View>
+
               {/* Notes */}
               <Text style={[styles.inputLabel, { marginTop: 12 }]}>Notes / Target Details</Text>
               <TextInput
@@ -374,6 +433,14 @@ export function SavingsGoalCard({
             </ScrollView>
           </View>
         </View>
+
+        <DatePickerModal
+          visible={showDatePicker}
+          value={targetDate || undefined}
+          onChange={(newDate) => setTargetDate(newDate)}
+          onClose={() => setShowDatePicker(false)}
+          title="Target Completion Date"
+        />
       </Modal>
     </View>
   );
@@ -660,5 +727,73 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "800",
+  },
+  targetDateTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: colors.surfaceTertiary,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+  },
+  targetDateTagText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: colors.brandPrimary,
+  },
+  datePickerTriggerBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  dateIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceTertiary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dateDisplayTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.onSurface,
+  },
+  dateDisplaySubtitle: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: colors.onSurfaceSecondary,
+  },
+  changeDateBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: colors.surfaceTertiary,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+  },
+  changeDateBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.brandPrimary,
+  },
+  clearDateBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    backgroundColor: "#FEE2E2",
+  },
+  clearDateBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#EF4444",
   },
 });

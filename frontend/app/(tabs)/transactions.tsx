@@ -33,6 +33,7 @@ import { SwipeableTxnRow } from "@/src/components/SwipeableTxnRow";
 import { TransactionDetailModal } from "@/src/components/TransactionDetailModal";
 import { AnimatedMascot } from "@/src/components/AnimatedMascot";
 import { CuteAppBackground } from "@/src/components/CuteAppBackground";
+import { DatePickerModal } from "@/src/components/DatePickerModal";
 
 export default function Transactions() {
   const router = useRouter();
@@ -51,6 +52,7 @@ export default function Transactions() {
   const [typeFilter, setTypeFilter] = useState<"all" | "expense" | "income" | "transfer">("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
   const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
 
@@ -308,12 +310,24 @@ export default function Transactions() {
           style={styles.monthDisplayPill}
           onPress={() => {
             Haptics.selectionAsync().catch(() => {});
+            setShowDatePicker(true);
+          }}
+        >
+          <Ionicons name="calendar" size={14} color={colors.brandPrimary} />
+          <Text style={styles.monthDisplayText}>{formatMonthDisplay(selectedMonth)}</Text>
+          <Ionicons name="chevron-down" size={12} color={colors.onSurfaceSecondary} />
+        </Pressable>
+
+        <Pressable
+          style={[styles.allTimeBtn, selectedMonth === "all" && styles.allTimeBtnActive]}
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
             setSelectedMonth(selectedMonth === "all" ? monthKey(todayISO()) : "all");
           }}
         >
-          <Ionicons name="calendar-outline" size={14} color={colors.brandPrimary} />
-          <Text style={styles.monthDisplayText}>{formatMonthDisplay(selectedMonth)}</Text>
-          <Ionicons name="swap-horizontal" size={12} color={colors.onSurfaceSecondary} />
+          <Text style={[styles.allTimeBtnText, selectedMonth === "all" && styles.allTimeBtnTextActive]}>
+            {selectedMonth === "all" ? "This Month" : "All Time"}
+          </Text>
         </Pressable>
 
         <Pressable
@@ -525,6 +539,17 @@ export default function Transactions() {
         onDelete={handleDelete}
         onUpdate={handleUpdate}
       />
+
+      {/* Interactive Month & Date Picker Modal */}
+      <DatePickerModal
+        visible={showDatePicker}
+        value={selectedMonth === "all" ? todayISO() : `${selectedMonth}-01`}
+        onChange={(pickedDate) => {
+          setSelectedMonth(monthKey(pickedDate));
+        }}
+        onClose={() => setShowDatePicker(false)}
+        title="Select Month / Date"
+      />
     </SafeAreaView>
   );
 }
@@ -603,12 +628,33 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: radius.pill,
     backgroundColor: colors.surfaceSecondary,
     borderWidth: 1,
     borderColor: colors.borderStrong,
+    ...shadow.soft,
+  },
+  allTimeBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  allTimeBtnActive: {
+    backgroundColor: colors.surfaceTertiary,
+    borderColor: colors.brandPrimary,
+  },
+  allTimeBtnText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.onSurfaceSecondary,
+  },
+  allTimeBtnTextActive: {
+    color: colors.brandPrimary,
   },
   monthDisplayText: {
     fontWeight: "800",

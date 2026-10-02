@@ -17,6 +17,7 @@ import { CATEGORIES, INCOME_CATEGORIES, categoryMeta } from "@/src/constants";
 import { amountToWorkHours, formatTimeCost, getBobaReaction, rm, shortDate, todayISO, yesterdayISO } from "@/src/format";
 import { Account, BudgetBucket, Transaction } from "@/src/types";
 import { AnimatedMascot } from "./AnimatedMascot";
+import { DatePickerModal } from "./DatePickerModal";
 
 interface Props {
   visible: boolean;
@@ -54,6 +55,7 @@ export function TransactionDetailModal({
   const [editCategory, setEditCategory] = useState("Makan");
   const [editBucket, setEditBucket] = useState<BudgetBucket | undefined>(undefined);
   const [editDate, setEditDate] = useState("");
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [editNote, setEditNote] = useState("");
   const [editAccountId, setEditAccountId] = useState("");
 
@@ -344,8 +346,8 @@ export function TransactionDetailModal({
 
               {/* Date */}
               <View style={styles.inputGroup}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                  <Text style={styles.inputLabel}>Date (YYYY-MM-DD)</Text>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <Text style={styles.inputLabel}>Transaction Date</Text>
                   <View style={{ flexDirection: "row", gap: 6 }}>
                     <Pressable
                       style={[styles.dateChipSmall, editDate === todayISO() && styles.dateChipSmallActive]}
@@ -355,7 +357,7 @@ export function TransactionDetailModal({
                       }}
                     >
                       <Text style={[styles.dateChipSmallText, editDate === todayISO() && styles.dateChipSmallTextActive]}>
-                        Today
+                        ⚡ Today
                       </Text>
                     </Pressable>
                     <Pressable
@@ -366,18 +368,33 @@ export function TransactionDetailModal({
                       }}
                     >
                       <Text style={[styles.dateChipSmallText, editDate === yesterdayISO() && styles.dateChipSmallTextActive]}>
-                        Yesterday
+                        🗓️ Yesterday
                       </Text>
                     </Pressable>
                   </View>
                 </View>
-                <TextInput
-                  value={editDate}
-                  onChangeText={setEditDate}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={colors.onSurfaceSecondary}
-                  style={styles.input}
-                />
+
+                <Pressable
+                  style={styles.datePickerTriggerBtn}
+                  onPress={() => {
+                    Haptics.selectionAsync().catch(() => {});
+                    setShowDatePicker(true);
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                    <View style={styles.dateIconCircle}>
+                      <Ionicons name="calendar" size={16} color={colors.brandPrimary} />
+                    </View>
+                    <View>
+                      <Text style={styles.dateDisplayTitle}>{shortDate(editDate || todayISO())}</Text>
+                      <Text style={styles.dateDisplaySubtitle}>{editDate || todayISO()}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.changeDateBadge}>
+                    <Text style={styles.changeDateBadgeText}>Pick Date</Text>
+                    <Ionicons name="calendar-outline" size={13} color={colors.brandPrimary} />
+                  </View>
+                </Pressable>
               </View>
 
               {/* Note */}
@@ -543,6 +560,14 @@ export function TransactionDetailModal({
           )}
         </View>
       </KeyboardAvoidingView>
+
+      <DatePickerModal
+        visible={showDatePicker}
+        value={editDate}
+        onChange={(newDate) => setEditDate(newDate)}
+        onClose={() => setShowDatePicker(false)}
+        title="Edit Transaction Date"
+      />
     </Modal>
   );
 }
@@ -903,6 +928,49 @@ const styles = StyleSheet.create({
   dateChipSmallTextActive: {
     color: colors.onBrandPrimary,
     fontWeight: "800",
+  },
+  datePickerTriggerBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  dateIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceTertiary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dateDisplayTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.onSurface,
+  },
+  dateDisplaySubtitle: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: colors.onSurfaceSecondary,
+  },
+  changeDateBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: colors.surfaceTertiary,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+  },
+  changeDateBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.brandPrimary,
   },
 });
 

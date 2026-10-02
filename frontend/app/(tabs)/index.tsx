@@ -54,6 +54,8 @@ import { PurchaseSimulatorModal } from "@/src/components/PurchaseSimulatorModal"
 import { RecurringModal } from "@/src/components/RecurringModal";
 import { MonthlyWrappedModal } from "@/src/components/MonthlyWrappedModal";
 import { DebtFreedomModal } from "@/src/components/DebtFreedomModal";
+import { LockScreenWidgetModal } from "@/src/components/LockScreenWidgetModal";
+import { syncWidgetData } from "@/src/utils/widgetBridge";
 
 export default function HomeDashboard() {
   const router = useRouter();
@@ -89,6 +91,7 @@ export default function HomeDashboard() {
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [showWrappedModal, setShowWrappedModal] = useState(false);
   const [showDebtFreedomModal, setShowDebtFreedomModal] = useState(false);
+  const [showWidgetModal, setShowWidgetModal] = useState(false);
 
   const loadData = useCallback(async () => {
     await seedIfNeeded();
@@ -241,6 +244,23 @@ export default function HomeDashboard() {
   });
 
   const recentTxns = transactions.slice(0, 6);
+
+  // Sync latest budget & available spend figures to iPhone widget bridge
+  useFocusEffect(
+    useCallback(() => {
+      syncWidgetData({
+        availableToSpend: budgetRemaining,
+        comfortRemaining,
+        totalSpent: livingSpend,
+        budgetLimit,
+        budgetUsedPct,
+        currency: "RM",
+        hourlyRate: wage.hourlyRate,
+        availableHours: budgetRemainingHours,
+        updatedAt: new Date().toISOString(),
+      }).catch(() => {});
+    }, [budgetRemaining, comfortRemaining, livingSpend, budgetLimit, budgetUsedPct, wage.hourlyRate, budgetRemainingHours])
+  );
 
   return (
     <SafeAreaView
@@ -555,6 +575,32 @@ export default function HomeDashboard() {
               </Text>
             </View>
           </View>
+
+          {/* Available to Spend Highlight Card with iPhone Lock Screen Widget Shortcut */}
+          <Pressable
+            style={styles.availableSpendBanner}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              setShowWidgetModal(true);
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+              <View style={styles.widgetIconBubble}>
+                <Ionicons name="phone-portrait" size={18} color={colors.brandPrimary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.availableSpendLabel}>AVAILABLE TO SPEND</Text>
+                <Text style={styles.availableSpendAmount}>{rm(budgetRemaining)}</Text>
+                <Text style={styles.availableSpendSub}>
+                  {budgetRemainingHours.toFixed(1)}h work remaining · Tap for Lock Screen Widget
+                </Text>
+              </View>
+            </View>
+            <View style={styles.widgetPillBadge}>
+              <Ionicons name="lock-closed" size={12} color="#FFFFFF" />
+              <Text style={styles.widgetPillBadgeText}>Widget</Text>
+            </View>
+          </Pressable>
         </View>
 
         {/* Mascot Life Energy Reaction Card */}
@@ -626,6 +672,18 @@ export default function HomeDashboard() {
               <Text style={{ fontSize: 24 }}>🎁</Text>
               <Text style={styles.powerTileTitle}>Wrapped</Text>
               <Text style={styles.powerTileSub}>Monthly story</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [styles.powerTile, pressed && { opacity: 0.85 }]}
+              onPress={() => {
+                setShowWidgetModal(true);
+                Haptics.selectionAsync().catch(() => {});
+              }}
+            >
+              <Text style={{ fontSize: 24 }}>📱</Text>
+              <Text style={styles.powerTileTitle}>Lock Widget</Text>
+              <Text style={styles.powerTileSub}>Live spend bar</Text>
             </Pressable>
           </View>
         </View>
@@ -828,6 +886,17 @@ export default function HomeDashboard() {
         transactions={transactions}
         wage={wage}
         onClose={() => setShowWrappedModal(false)}
+      />
+
+      {/* iPhone Lock Screen Widget Preview Modal */}
+      <LockScreenWidgetModal
+        visible={showWidgetModal}
+        onClose={() => setShowWidgetModal(false)}
+        availableToSpend={budgetRemaining}
+        comfortRemaining={comfortRemaining}
+        budgetLimit={budgetLimit}
+        budgetUsedPct={budgetUsedPct}
+        hourlyRate={wage.hourlyRate}
       />
     </SafeAreaView>
   );
@@ -1476,5 +1545,55 @@ const styles = StyleSheet.create({
     color: colors.onSurfaceSecondary,
     marginTop: 1,
     textAlign: "center",
+  },
+  availableSpendBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.md,
+    padding: 12,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: "#FBCFE8",
+  },
+  widgetIconBubble: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    ...shadow.soft,
+  },
+  availableSpendLabel: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: colors.brandPrimary,
+    letterSpacing: 0.8,
+  },
+  availableSpendAmount: {
+    fontSize: 20,
+    fontWeight: "900",
+    color: colors.onSurface,
+  },
+  availableSpendSub: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: colors.onSurfaceSecondary,
+  },
+  widgetPillBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: colors.brandPrimary,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+  },
+  widgetPillBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
 });
