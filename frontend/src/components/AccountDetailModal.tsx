@@ -21,6 +21,7 @@ interface Props {
   visible: boolean;
   account: Account | null;
   accounts: Account[];
+  transactions: Transaction[];
   hourlyRate: number;
   onClose: () => void;
   onEditAccount: (account: Account) => void;
@@ -36,6 +37,7 @@ export function AccountDetailModal({
   visible,
   account,
   accounts,
+  transactions,
   hourlyRate,
   onClose,
   onEditAccount,
@@ -44,33 +46,14 @@ export function AccountDetailModal({
   onTxnPress,
   onAccountUpdated,
 }: Props) {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [activeFilter, setActiveFilter] = useState<TxnFilter>("all");
-  const [loading, setLoading] = useState(false);
 
-  const loadTxns = useCallback(async () => {
-    if (!account) return;
-    setLoading(true);
-    try {
-      const all = await getTransactions();
-      // Filter transactions that touch this account (either source or destination)
-      const filtered = all.filter(
-        (t) => t.accountId === account.id || t.toAccountId === account.id
-      );
-      setTransactions(filtered);
-    } catch (e) {
-      console.warn("Failed to load account transactions", e);
-    } finally {
-      setLoading(false);
-    }
-  }, [account]);
-
-  useEffect(() => {
-    if (visible && account) {
-      loadTxns();
-      setActiveFilter("all");
-    }
-  }, [visible, account, loadTxns]);
+  const accountTxns = useMemo(() => {
+    if (!account) return [];
+    return transactions.filter(
+      (t) => t.accountId === account.id || t.toAccountId === account.id
+    );
+  }, [transactions, account?.id]);
 
   const isDebt = account ? isLiabilityAccount(account.type) : false;
   const isLoan = account?.type === "loan";
@@ -83,7 +66,7 @@ export function AccountDetailModal({
   // Classify transactions into Inflow vs Outflow relative to this account
   const categorizedTxns = useMemo(() => {
     if (!account) return [];
-    return transactions.map((t) => {
+    return accountTxns.map((t) => {
       let isInflow = false;
       let isOutflow = false;
       let flowLabel = "";
@@ -120,7 +103,7 @@ export function AccountDetailModal({
         counterpartName,
       };
     });
-  }, [transactions, account?.id, accounts, isDebt]);
+  }, [accountTxns, account?.id, accounts, isDebt]);
 
   // Compute monthly Inflow and Outflow totals for current month
   const monthlyStats = useMemo(() => {
@@ -171,7 +154,6 @@ export function AccountDetailModal({
           onPress: async () => {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
             await deleteTransaction(t.id);
-            await loadTxns();
             onAccountUpdated?.();
           },
         },

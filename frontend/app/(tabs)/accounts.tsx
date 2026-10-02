@@ -106,7 +106,6 @@ export default function Accounts() {
       initOrGetSyncSession(),
       getSavingsGoals(),
       getTransactions(),
-      checkAndProcessRecurringDue().catch(() => 0),
     ]);
     setAccounts(a);
     setWage(w);
@@ -116,11 +115,11 @@ export default function Accounts() {
     setTempSalary(String(w.monthlySalary));
     setTempHours(String(w.hoursPerWeek));
 
-    if (selectedDetailAccount) {
-      const fresh = a.find((x) => x.id === selectedDetailAccount.id);
-      if (fresh) setSelectedDetailAccount(fresh);
-    }
-  }, [selectedDetailAccount]);
+    setSelectedDetailAccount((prev) => {
+      if (!prev) return null;
+      return a.find((x) => x.id === prev.id) || prev;
+    });
+  }, []);
 
   const handleQuickStash = (goal: SavingsGoal, amount: number) => {
     Haptics.selectionAsync().catch(() => {});
@@ -131,14 +130,17 @@ export default function Accounts() {
     setTransferModalOpen(true);
   };
 
-  useFocusEffect(useCallback(() => {
-    load();
-    const unsub = subscribeSyncStatus((st, sess) => {
-      setSyncStatus(st);
-      if (sess) setSyncSession(sess);
-    });
-    return () => unsub();
-  }, [load]));
+  useFocusEffect(
+    useCallback(() => {
+      load();
+      checkAndProcessRecurringDue().catch(() => 0);
+      const unsub = subscribeSyncStatus((st, sess) => {
+        setSyncStatus(st);
+        if (sess) setSyncSession(sess);
+      });
+      return () => unsub();
+    }, [load])
+  );
 
   const handleSaveWage = async () => {
     const salary = parseFloat(tempSalary) || 0;
@@ -1275,6 +1277,7 @@ export default function Accounts() {
           visible={!!selectedDetailAccount}
           account={selectedDetailAccount}
           accounts={accounts}
+          transactions={transactions}
           hourlyRate={wage.hourlyRate}
           onClose={() => setSelectedDetailAccount(null)}
           onEditAccount={(acc) => {
