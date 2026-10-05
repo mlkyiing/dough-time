@@ -19,12 +19,12 @@ struct DoughTimeTimelineProvider: TimelineProvider {
     private var fallbackEntry: WidgetBudgetEntry {
         WidgetBudgetEntry(
             date: Date(),
-            availableToSpend: 420.50,
-            comfortRemaining: 150.00,
+            availableToSpend: 883.00,
+            comfortRemaining: 323.00,
             budgetLimit: 2000.00,
-            budgetUsedPct: 65,
+            budgetUsedPct: 56,
             currency: "RM",
-            availableHours: 16.2
+            availableHours: 34.0
         )
     }
 
@@ -44,9 +44,24 @@ struct DoughTimeTimelineProvider: TimelineProvider {
     }
 
     private func loadSharedEntry() -> WidgetBudgetEntry {
-        guard let sharedDefaults = UserDefaults(suiteName: appGroupSuite),
-              let jsonString = sharedDefaults.string(forKey: "widgetData"),
-              let data = jsonString.data(using: .utf8) else {
+        // 1. Try reading from shared UserDefaults
+        var rawData: Data? = nil
+        if let sharedDefaults = UserDefaults(suiteName: appGroupSuite),
+           let jsonString = sharedDefaults.string(forKey: "widgetData"),
+           let data = jsonString.data(using: .utf8) {
+            rawData = data
+        }
+
+        // 2. Also try reading from shared App Group container file for maximum reliability
+        if rawData == nil,
+           let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupSuite) {
+            let fileURL = containerURL.appendingPathComponent("widgetData.json")
+            if let data = try? Data(contentsOf: fileURL) {
+                rawData = data
+            }
+        }
+
+        guard let data = rawData else {
             return fallbackEntry
         }
 
@@ -100,18 +115,6 @@ struct DoughTimeWidgetEntryView: View {
         max(0, 100 - entry.budgetUsedPct)
     }
 
-    private var cuteMood: String {
-        if leftPct >= 60 {
-            return "🥟 Happy Dough"
-        } else if leftPct >= 30 {
-            return "🥟 DoughTime"
-        } else if leftPct >= 10 {
-            return "🥟 Chill Mode"
-        } else {
-            return "🥟 Saving Mode"
-        }
-    }
-
     private var cuteFace: String {
         if leftPct >= 60 {
             return "(◕‿◕)✨"
@@ -140,25 +143,34 @@ struct DoughTimeWidgetEntryView: View {
         // 1. Lock Screen Rectangular Card
         case .accessoryRectangular:
             VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 3) {
-                    Text(cuteMood)
-                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                    Spacer()
-                    Text("\(leftPct)% left ✨")
+                HStack(alignment: .center, spacing: 3) {
+                    Text("🥟")
+                        .font(.system(size: 11))
+                    Text("DoughTime")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                    Spacer(minLength: 4)
+                    Text("\(leftPct)% left")
                         .font(.system(size: 10, weight: .bold, design: .rounded))
                 }
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+
                 Text("\(entry.currency) \(String(format: "%.2f", entry.availableToSpend))")
                     .font(.system(size: 18, weight: .heavy, design: .rounded))
                     .minimumScaleFactor(0.8)
-                HStack(spacing: 4) {
+                    .lineLimit(1)
+
+                HStack(spacing: 3) {
                     Text(cuteSubtitle)
                         .font(.system(size: 9.5, weight: .medium, design: .rounded))
                         .foregroundColor(.secondary)
-                    Spacer()
+                    Spacer(minLength: 2)
                     Text(cuteFace)
                         .font(.system(size: 8.5, weight: .bold, design: .rounded))
                         .foregroundColor(.secondary)
                 }
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
             }
             .widgetBackground()
 

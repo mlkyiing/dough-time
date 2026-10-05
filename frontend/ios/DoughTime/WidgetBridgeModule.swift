@@ -17,9 +17,16 @@ class WidgetBridgeModule: NSObject {
     resolver resolve: @escaping RCTPromiseResolveBlock,
     rejecter reject: @escaping RCTPromiseRejectBlock
   ) {
+    // 1. Write to App Group UserDefaults
     if let sharedDefaults = UserDefaults(suiteName: suiteName) {
       sharedDefaults.set(jsonString, forKey: "widgetData")
       sharedDefaults.synchronize()
+    }
+
+    // 2. Also write to App Group shared file container for dual reliability
+    if let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: suiteName) {
+      let fileURL = containerURL.appendingPathComponent("widgetData.json")
+      try? jsonString.write(to: fileURL, atomically: true, encoding: .utf8)
     }
 
     if #available(iOS 14.0, *) {
