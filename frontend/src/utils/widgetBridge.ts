@@ -32,7 +32,7 @@ export async function syncWidgetData(payload: WidgetPayload): Promise<void> {
           await SharedGroupPreferences.setItem(
             "widgetData",
             JSON.stringify(payload),
-            "group.com.doughtime.app"
+            "group.com.michelleloh.doughtime"
           );
         }
       } catch {

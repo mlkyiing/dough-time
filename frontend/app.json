@@ -9,7 +9,9 @@
     "icon": "./assets/mascot.jpg",
     "ios": {
       "icon": "./assets/mascot.jpg",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.michelleloh.doughtime",
+      "appleTeamId": "A58BPU2CPY"
     },
     "android": {
       "adaptiveIcon": {

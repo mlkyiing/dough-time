@@ -14,9 +14,9 @@ struct WidgetBudgetEntry: TimelineEntry {
 
 // MARK: - Timeline Provider
 struct DoughTimeTimelineProvider: TimelineProvider {
-    let appGroupSuite = "group.com.doughtime.app"
+    let appGroupSuite = "group.com.michelleloh.doughtime"
 
-    func placeholder(in context: Context) -> WidgetBudgetEntry {
+    private var fallbackEntry: WidgetBudgetEntry {
         WidgetBudgetEntry(
             date: Date(),
             availableToSpend: 420.50,
@@ -28,13 +28,16 @@ struct DoughTimeTimelineProvider: TimelineProvider {
         )
     }
 
+    func placeholder(in context: Context) -> WidgetBudgetEntry {
+        fallbackEntry
+    }
+
     func getSnapshot(in context: Context, completion: @escaping (WidgetBudgetEntry) -> Void) {
         completion(loadSharedEntry())
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<WidgetBudgetEntry>) -> Void) {
         let entry = loadSharedEntry()
-        // Refresh every 30 minutes or when triggered by app via WidgetCenter.shared.reloadAllTimelines()
         let nextUpdate = Calendar.current.date(byAdding: .minute, value: 30, to: Date()) ?? Date()
         let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
         completion(timeline)
@@ -44,7 +47,7 @@ struct DoughTimeTimelineProvider: TimelineProvider {
         guard let sharedDefaults = UserDefaults(suiteName: appGroupSuite),
               let jsonString = sharedDefaults.string(forKey: "widgetData"),
               let data = jsonString.data(using: .utf8) else {
-            return placeholder(in: Context(isPreview: true))
+            return fallbackEntry
         }
 
         do {
@@ -70,7 +73,21 @@ struct DoughTimeTimelineProvider: TimelineProvider {
             print("Failed to decode widget payload: \(error)")
         }
 
-        return placeholder(in: Context(isPreview: true))
+        return fallbackEntry
+    }
+}
+
+// MARK: - iOS 17+ Background Compatibility Helper
+extension View {
+    @ViewBuilder
+    func widgetBackground(_ color: Color = .clear) -> some View {
+        if #available(iOS 17.0, iOSApplicationExtension 17.0, *) {
+            self.containerBackground(for: .widget) {
+                color
+            }
+        } else {
+            self.background(color)
+        }
     }
 }
 
@@ -79,78 +96,129 @@ struct DoughTimeWidgetEntryView: View {
     var entry: DoughTimeTimelineProvider.Entry
     @Environment(\.widgetFamily) var family
 
+    private var leftPct: Int {
+        max(0, 100 - entry.budgetUsedPct)
+    }
+
+    private var cuteMood: String {
+        if leftPct >= 60 {
+            return "🥟 Happy Dough"
+        } else if leftPct >= 30 {
+            return "🥟 DoughTime"
+        } else if leftPct >= 10 {
+            return "🥟 Chill Mode"
+        } else {
+            return "🥟 Saving Mode"
+        }
+    }
+
+    private var cuteFace: String {
+        if leftPct >= 60 {
+            return "(◕‿◕)✨"
+        } else if leftPct >= 30 {
+            return "(｡•̀ᴗ-)✧"
+        } else if leftPct >= 10 {
+            return "(´･ω･`)"
+        } else {
+            return "(；•̀_•́)"
+        }
+    }
+
+    private var cuteSubtitle: String {
+        let hours = String(format: "%.0f", entry.availableHours)
+        if leftPct >= 50 {
+            return "💖 ~\(hours)h life freedom"
+        } else if leftPct >= 20 {
+            return "✨ ~\(hours)h safe spend"
+        } else {
+            return "🌱 ~\(hours)h comfort left"
+        }
+    }
+
     var body: some View {
         switch family {
-        // MARK: 1. Lock Screen Rectangular
+        // 1. Lock Screen Rectangular Card
         case .accessoryRectangular:
             VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 4) {
-                    Text("🍞")
-                        .font(.system(size: 11))
-                    Text("DOUGHTIME")
-                        .font(.system(size: 10, weight: .bold))
+                HStack(spacing: 3) {
+                    Text(cuteMood)
+                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
                     Spacer()
-                    Text("\(max(0, 100 - entry.budgetUsedPct))% left")
-                        .font(.system(size: 10, weight: .semibold))
+                    Text("\(leftPct)% left ✨")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
                 }
                 Text("\(entry.currency) \(String(format: "%.2f", entry.availableToSpend))")
-                    .font(.system(size: 16, weight: .heavy))
+                    .font(.system(size: 18, weight: .heavy, design: .rounded))
                     .minimumScaleFactor(0.8)
-                Text("Available · ~\(String(format: "%.0f", entry.availableHours))h life energy")
-                    .font(.system(size: 9))
-                    .foregroundColor(.secondary)
+                HStack(spacing: 4) {
+                    Text(cuteSubtitle)
+                        .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text(cuteFace)
+                        .font(.system(size: 8.5, weight: .bold, design: .rounded))
+                        .foregroundColor(.secondary)
+                }
             }
+            .widgetBackground()
 
-        // MARK: 2. Lock Screen Circular Gauge
+        // 2. Lock Screen Circular Gauge
         case .accessoryCircular:
-            Gauge(value: Double(max(0, 100 - entry.budgetUsedPct)), in: 0...100) {
-                Text("Left")
-                    .font(.system(size: 8, weight: .bold))
-            } currentValueLabel: {
-                Text("\(max(0, 100 - entry.budgetUsedPct))%")
-                    .font(.system(size: 12, weight: .heavy))
+            ZStack {
+                AccessoryWidgetBackground()
+                VStack(spacing: 0) {
+                    Text("🥟")
+                        .font(.system(size: 13))
+                    Text("\(leftPct)%")
+                        .font(.system(size: 11.5, weight: .heavy, design: .rounded))
+                    Text("safe ✨")
+                        .font(.system(size: 7.5, weight: .bold, design: .rounded))
+                        .foregroundColor(.secondary)
+                }
             }
-            .gaugeStyle(.accessoryCircular)
+            .widgetBackground()
 
-        // MARK: 3. Lock Screen Inline (Above Clock)
+        // 3. Lock Screen Inline (Above Clock)
         case .accessoryInline:
-            Text("🍞 Available: \(entry.currency) \(String(format: "%.2f", entry.availableToSpend))")
-                .font(.system(size: 11, weight: .semibold))
+            Text("🥟 \(entry.currency) \(String(format: "%.0f", entry.availableToSpend)) · \(leftPct)% left \(cuteFace)")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
 
-        // MARK: 4. Home Screen Small
+        // 4. Home Screen Small
         case .systemSmall:
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text("🍞")
-                        .font(.system(size: 20))
+                    Text("🥟")
+                        .font(.system(size: 24))
                     Spacer()
-                    Text("\(max(0, 100 - entry.budgetUsedPct))% left")
-                        .font(.system(size: 11, weight: .bold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.pink.opacity(0.15))
-                        .cornerRadius(8)
+                    Text("\(leftPct)% safe ✨")
+                        .font(.system(size: 11, weight: .heavy, design: .rounded))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Color.pink.opacity(0.18))
+                        .foregroundColor(.pink)
+                        .cornerRadius(10)
                 }
                 Spacer()
                 Text("AVAILABLE TO SPEND")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
                     .foregroundColor(.secondary)
                 Text("\(entry.currency) \(String(format: "%.2f", entry.availableToSpend))")
-                    .font(.system(size: 20, weight: .heavy))
-                Text("Comfort pot: \(entry.currency) \(String(format: "%.0f", entry.comfortRemaining))")
-                    .font(.system(size: 10))
+                    .font(.system(size: 21, weight: .heavy, design: .rounded))
+                Text(cuteSubtitle + " " + cuteFace)
+                    .font(.system(size: 9.5, weight: .medium, design: .rounded))
                     .foregroundColor(.secondary)
             }
-            .padding()
+            .padding(14)
+            .widgetBackground(Color(.systemBackground))
 
         default:
-            Text("DoughTime: \(entry.currency) \(String(format: "%.2f", entry.availableToSpend))")
+            Text("🥟 \(entry.currency) \(String(format: "%.2f", entry.availableToSpend))")
+                .widgetBackground()
         }
     }
 }
 
 // MARK: - Main Widget Declaration
-@main
 struct DoughTimeWidget: Widget {
     let kind: String = "DoughTimeLockScreenWidget"
 
@@ -166,5 +234,6 @@ struct DoughTimeWidget: Widget {
             .accessoryInline,
             .systemSmall
         ])
+        .contentMarginsDisabled()
     }
 }
