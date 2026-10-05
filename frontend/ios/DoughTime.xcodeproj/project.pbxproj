@@ -17,6 +17,8 @@
 		E4BC789B306FB90F00656C23 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E4BC789A306FB90F00656C23 /* SwiftUI.framework */; };
 		E4BC78AA306FB91000656C23 /* DoughTimeWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E4BC7897306FB90F00656C23 /* DoughTimeWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
+		F11748502D0307B40044C1D9 /* WidgetBridgeModule.m in Sources */ = {isa = PBXBuildFile; fileRef = F11748512D0307B40044C1D9 /* WidgetBridgeModule.m */; };
+		F11748522D0307B40044C1D9 /* WidgetBridgeModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748532D0307B40044C1D9 /* WidgetBridgeModule.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -60,6 +62,8 @@
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = DoughTime/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* DoughTime-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "DoughTime-Bridging-Header.h"; path = "DoughTime/DoughTime-Bridging-Header.h"; sourceTree = "<group>"; };
+		F11748512D0307B40044C1D9 /* WidgetBridgeModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WidgetBridgeModule.m; path = DoughTime/WidgetBridgeModule.m; sourceTree = "<group>"; };
+		F11748532D0307B40044C1D9 /* WidgetBridgeModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WidgetBridgeModule.swift; path = DoughTime/WidgetBridgeModule.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -111,6 +115,8 @@
 			children = (
 				F11748412D0307B40044C1D9 /* AppDelegate.swift */,
 				F11748442D0722820044C1D9 /* DoughTime-Bridging-Header.h */,
+				F11748512D0307B40044C1D9 /* WidgetBridgeModule.m */,
+				F11748532D0307B40044C1D9 /* WidgetBridgeModule.swift */,
 				BB2F792B24A3F905000567C9 /* Supporting */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
@@ -426,6 +432,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
+				F11748502D0307B40044C1D9 /* WidgetBridgeModule.m in Sources */,
+				F11748522D0307B40044C1D9 /* WidgetBridgeModule.swift in Sources */,
 				348D153E5EDA63F68B9332AF /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

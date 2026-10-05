@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Platform } from "react-native";
+import { NativeModules, Platform } from "react-native";
 
 export interface WidgetPayload {
   availableToSpend: number;
@@ -14,29 +14,25 @@ export interface WidgetPayload {
 }
 
 const WIDGET_STORAGE_KEY = "@doughtime_lockscreen_widget_data";
+const APP_GROUP_SUITE = "group.com.michelleloh.doughtime";
 
 /**
- * Saves current financial status to local storage and prepares shared payload
- * for iOS WidgetKit App Groups (`group.com.doughtime.app`).
+ * Saves current financial status to local storage and syncs shared payload
+ * to iOS WidgetKit App Groups (`group.com.michelleloh.doughtime`) and reloads widget timelines.
  */
 export async function syncWidgetData(payload: WidgetPayload): Promise<void> {
   try {
-    await AsyncStorage.setItem(WIDGET_STORAGE_KEY, JSON.stringify(payload));
+    const jsonString = JSON.stringify(payload);
+    await AsyncStorage.setItem(WIDGET_STORAGE_KEY, jsonString);
 
-    // When running in standalone iOS app with App Groups native bridge:
     if (Platform.OS === "ios") {
       try {
-        // If react-native-shared-group-preferences is installed or native module is linked:
-        const SharedGroupPreferences = (global as any).SharedGroupPreferences;
-        if (SharedGroupPreferences) {
-          await SharedGroupPreferences.setItem(
-            "widgetData",
-            JSON.stringify(payload),
-            "group.com.michelleloh.doughtime"
-          );
+        const { WidgetBridgeModule } = NativeModules;
+        if (WidgetBridgeModule && typeof WidgetBridgeModule.setWidgetData === "function") {
+          await WidgetBridgeModule.setWidgetData(jsonString, APP_GROUP_SUITE);
         }
-      } catch {
-        // Native module not linked in Expo Go / web; gracefully fallback
+      } catch (nativeErr) {
+        console.warn("WidgetBridgeModule sync error:", nativeErr);
       }
     }
   } catch (e) {

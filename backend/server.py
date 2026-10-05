@@ -753,15 +753,15 @@ async def sync_merge(req: VaultMergeRequest):
             if aid in cloud_accs:
                 # Merge metadata from client, but protect ground-truth cloud balance
                 c_acc = dict(cloud_accs[aid])
-                c_acc["name"] = a.get("name", c_acc.get("name"))
-                c_acc["emoji"] = a.get("emoji", c_acc.get("emoji"))
-                c_acc["color"] = a.get("color", c_acc.get("color"))
-                c_acc["type"] = a.get("type", c_acc.get("type"))
-                if "creditLimit" in a: c_acc["creditLimit"] = a["creditLimit"]
-                if "dueDay" in a: c_acc["dueDay"] = a["dueDay"]
-                if "reminderEnabled" in a: c_acc["reminderEnabled"] = a["reminderEnabled"]
-                if "interestRate" in a: c_acc["interestRate"] = a["interestRate"]
-                if "monthlyInstallment" in a: c_acc["monthlyInstallment"] = a["monthlyInstallment"]
+                for field in [
+                    "name", "emoji", "color", "type", "creditLimit", "dueDay",
+                    "reminderEnabled", "reminderDaysBefore", "interestRate", "monthlyInstallment",
+                    "statementBalance", "statementCutoffDay", "statementCleared",
+                    "loanTenureMonths", "loanRemainingMonths", "loanPrincipal", "loanType",
+                    "lastRepaymentMonth"
+                ]:
+                    if field in a:
+                        c_acc[field] = a[field]
                 
                 # If the client explicitly modified the account more recently (manual edit)
                 client_updated_at = a.get("updatedAt", "")

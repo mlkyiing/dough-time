@@ -586,74 +586,38 @@ export default function HomeDashboard() {
             </View>
           </View>
 
-          {/* Available to Spend Highlight Card with iPhone Lock Screen Widget Shortcut */}
+          {/* Available to Spend Compact Strip */}
           <Pressable
-            style={styles.availableSpendBanner}
+            style={styles.availableSpendStrip}
             onPress={() => {
               Haptics.selectionAsync().catch(() => {});
               setShowWidgetModal(true);
             }}
           >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
-              <View style={styles.widgetIconBubble}>
-                <Ionicons name="phone-portrait" size={18} color={colors.brandPrimary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.availableSpendLabel}>AVAILABLE TO SPEND</Text>
-                <Text style={styles.availableSpendAmount}>{rm(budgetRemaining)}</Text>
-                <Text style={styles.availableSpendSub}>
-                  {budgetRemainingHours.toFixed(1)}h work remaining · Tap for Lock Screen Widget
-                </Text>
-              </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1 }}>
+              <Text style={{ fontSize: 15 }}>🥟</Text>
+              <Text style={styles.availableSpendStripLabel}>Available:</Text>
+              <Text style={styles.availableSpendStripAmount}>{rm(budgetRemaining)}</Text>
+              <Text style={styles.availableSpendStripHours}>({budgetRemainingHours.toFixed(1)}h)</Text>
             </View>
-            <View style={styles.widgetPillBadge}>
-              <Ionicons name="lock-closed" size={12} color="#FFFFFF" />
-              <Text style={styles.widgetPillBadgeText}>Widget</Text>
+            <View style={styles.widgetChip}>
+              <Ionicons name="phone-portrait-outline" size={12} color={colors.brandPrimary} />
+              <Text style={styles.widgetChipText}>Widget</Text>
             </View>
           </Pressable>
         </View>
 
-        {/* iPhone Lock Screen Widget Prominent Feature Card */}
-        <Pressable
-          style={styles.lockscreenWidgetFeatureCard}
-          onPress={() => {
-            Haptics.selectionAsync().catch(() => {});
-            setShowWidgetModal(true);
-          }}
-        >
-          <View style={styles.widgetFeatureLeft}>
-            <View style={styles.widgetFeatureIconBadge}>
-              <Text style={{ fontSize: 24 }}>📱</Text>
-            </View>
-            <View style={{ flex: 1, gap: 2 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <Text style={styles.widgetFeatureTitle}>iPhone Lock Screen Widget</Text>
-                <View style={styles.newBadge}>
-                  <Text style={styles.newBadgeText}>LIVE</Text>
-                </View>
-              </View>
-              <Text style={styles.widgetFeatureDesc}>
-                Track your <Text style={{ fontWeight: "800", color: colors.brandPrimary }}>{rm(budgetRemaining)}</Text> available budget without unlocking your phone!
-              </Text>
-            </View>
-          </View>
-          <View style={styles.widgetFeatureAction}>
-            <Text style={styles.widgetFeatureActionText}>Preview</Text>
-            <Ionicons name="chevron-forward" size={14} color={colors.brandPrimary} />
-          </View>
-        </Pressable>
-
         {/* Mascot Life Energy Reaction Card */}
         <View style={styles.reactionCard}>
           <View style={styles.reactionRow}>
-            <AnimatedMascot variant="coin" size={54} interactive={true} />
-            <View style={{ flex: 1, gap: 3 }}>
+            <AnimatedMascot variant="coin" size={50} interactive={true} />
+            <View style={{ flex: 1, gap: 2 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <Text style={styles.reactionTitle}>{bobaReaction.title}</Text>
-                <Text style={{ fontSize: 16 }}>{bobaReaction.emoji}</Text>
+                <Text style={{ fontSize: 15 }}>{bobaReaction.emoji}</Text>
               </View>
               <Text style={styles.reactionDesc}>
-                This month you traded <Text style={styles.boldHighlight}>{monthWorkHours.toFixed(1)} hours</Text> of your work ({rm(monthSpending)}) for lifestyle expenses.
+                This month you traded <Text style={styles.boldHighlight}>{monthWorkHours.toFixed(1)} hours</Text> of work ({rm(monthSpending)}) for lifestyle expenses.
               </Text>
             </View>
           </View>
@@ -712,18 +676,6 @@ export default function HomeDashboard() {
               <Text style={{ fontSize: 24 }}>🎁</Text>
               <Text style={styles.powerTileTitle}>Wrapped</Text>
               <Text style={styles.powerTileSub}>Monthly story</Text>
-            </Pressable>
-
-            <Pressable
-              style={({ pressed }) => [styles.powerTile, pressed && { opacity: 0.85 }]}
-              onPress={() => {
-                setShowWidgetModal(true);
-                Haptics.selectionAsync().catch(() => {});
-              }}
-            >
-              <Text style={{ fontSize: 24 }}>📱</Text>
-              <Text style={styles.powerTileTitle}>Lock Widget</Text>
-              <Text style={styles.powerTileSub}>Live spend bar</Text>
             </Pressable>
           </View>
         </View>
@@ -1564,29 +1516,27 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   powerTile: {
-    width: "31%",
-    flexGrow: 1,
-    minWidth: 95,
+    width: "48.5%",
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
-    paddingVertical: 12,
-    paddingHorizontal: 6,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
     alignItems: "center",
     ...shadow.soft,
   },
   powerTileTitle: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "800",
     color: colors.onSurface,
-    marginTop: 4,
+    marginTop: 6,
     textAlign: "center",
   },
   powerTileSub: {
-    fontSize: 9,
+    fontSize: 10,
     color: colors.onSurfaceSecondary,
-    marginTop: 1,
+    marginTop: 2,
     textAlign: "center",
   },
   headerWidgetBtn: {
@@ -1600,115 +1550,47 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     ...shadow.soft,
   },
-  lockscreenWidgetFeatureCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: colors.surfaceSecondary,
-    borderWidth: 1.5,
-    borderColor: "#FBCFE8",
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    ...shadow.soft,
-  },
-  widgetFeatureLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    flex: 1,
-  },
-  widgetFeatureIconBadge: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.surfaceTertiary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  widgetFeatureTitle: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: colors.onSurface,
-  },
-  newBadge: {
-    backgroundColor: colors.brandPrimary,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: radius.pill,
-  },
-  newBadgeText: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: "#FFFFFF",
-  },
-  widgetFeatureDesc: {
-    fontSize: 11.5,
-    color: colors.onSurfaceSecondary,
-    lineHeight: 16,
-  },
-  widgetFeatureAction: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: colors.surfaceTertiary,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-  },
-  widgetFeatureActionText: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: colors.brandPrimary,
-  },
-  availableSpendBanner: {
+  availableSpendStrip: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     backgroundColor: colors.surfaceTertiary,
-    borderRadius: radius.md,
-    padding: 12,
-    marginTop: 14,
+    borderRadius: radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 10,
     borderWidth: 1,
     borderColor: "#FBCFE8",
   },
-  widgetIconBubble: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-    ...shadow.soft,
+  availableSpendStripLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.onSurfaceSecondary,
   },
-  availableSpendLabel: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: colors.brandPrimary,
-    letterSpacing: 0.8,
-  },
-  availableSpendAmount: {
-    fontSize: 20,
+  availableSpendStripAmount: {
+    fontSize: 13,
     fontWeight: "900",
     color: colors.onSurface,
   },
-  availableSpendSub: {
+  availableSpendStripHours: {
     fontSize: 11,
-    fontWeight: "500",
-    color: colors.onSurfaceSecondary,
+    fontWeight: "600",
+    color: colors.brandPrimary,
   },
-  widgetPillBadge: {
+  widgetChip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    backgroundColor: colors.brandPrimary,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    gap: 3,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 7,
+    paddingVertical: 3,
     borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: "#FBCFE8",
   },
-  widgetPillBadgeText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#FFFFFF",
+  widgetChipText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: colors.brandPrimary,
   },
 });
