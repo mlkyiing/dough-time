@@ -28,7 +28,7 @@ import {
 } from "@/src/store";
 import { Account, Transaction, WageSettings } from "@/src/types";
 import { CATEGORIES, INCOME_CATEGORIES, categoryMeta } from "@/src/constants";
-import { amountToWorkHours, formatMonthDisplay, monthKey, rm, todayISO } from "@/src/format";
+import { amountToWorkHours, formatMonthDisplay, monthKey, reportMonth, rm, shortDate, todayISO } from "@/src/format";
 import { SwipeableTxnRow } from "@/src/components/SwipeableTxnRow";
 import { TransactionDetailModal } from "@/src/components/TransactionDetailModal";
 import { AnimatedMascot } from "@/src/components/AnimatedMascot";
@@ -110,7 +110,10 @@ export default function Transactions() {
     const set = new Set<string>();
     set.add(monthKey(todayISO()));
     txns.forEach((t) => {
-      if (t.date) set.add(monthKey(t.date));
+      if (t.date) {
+        set.add(monthKey(t.date));
+        set.add(reportMonth(t));
+      }
     });
     return Array.from(set).sort().reverse();
   }, [txns]);
@@ -138,7 +141,7 @@ export default function Transactions() {
   const filtered = useMemo(() => {
     return txns.filter((t) => {
       // 1. Month filter
-      if (selectedMonth !== "all" && monthKey(t.date) !== selectedMonth) {
+      if (selectedMonth !== "all" && reportMonth(t) !== selectedMonth) {
         return false;
       }
       // 2. Type filter
@@ -152,23 +155,8 @@ export default function Transactions() {
   }, [txns, selectedMonth, typeFilter, categoryFilter]);
 
   const monthTxns = useMemo(
-    () => (selectedMonth === "all" ? txns : txns.filter((t) => monthKey(t.date) === selectedMonth)),
+    () => (selectedMonth === "all" ? txns : txns.filter((t) => reportMonth(t) === selectedMonth)),
     [txns, selectedMonth]
-  );
-
-  const monthExpensesCount = useMemo(
-    () => monthTxns.filter((t) => t.type !== "income" && t.type !== "transfer").length,
-    [monthTxns]
-  );
-
-  const monthIncomeCount = useMemo(
-    () => monthTxns.filter((t) => t.type === "income").length,
-    [monthTxns]
-  );
-
-  const monthTransfersCount = useMemo(
-    () => monthTxns.filter((t) => t.type === "transfer").length,
-    [monthTxns]
   );
 
   // Month stats for banner
@@ -181,6 +169,13 @@ export default function Transactions() {
     const net = income - expenses;
     return { expenses, income, transfers, net };
   }, [monthTxns]);
+
+  const shiftedPayday =
+    selectedMonth === "all"
+      ? undefined
+      : monthTxns.find(
+          (t) => t.type === "income" && t.category === "Salary" && monthKey(t.date) !== selectedMonth
+        );
 
   const totalExpenseHours = amountToWorkHours(monthStats.expenses, wage.hourlyRate);
   const totalIncomeHours = amountToWorkHours(monthStats.income, wage.hourlyRate);
@@ -240,19 +235,13 @@ export default function Transactions() {
       <CuteAppBackground />
       {/* Header */}
       <View style={styles.header}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          <AnimatedMascot variant="shopping" size={46} interactive={true} />
-          <View style={{ gap: 2 }}>
-            <Text style={styles.title}>Activity</Text>
-            <Text style={styles.subtitle}>
-              {viewMode === "money"
-                ? `Spent ${rm(monthStats.expenses)} · +${rm(monthStats.income)} in`
-                : `${totalExpenseHours.toFixed(1)}h spent · +${totalIncomeHours.toFixed(1)}h freed`}
-            </Text>
+        <View style={styles.headerTop}>
+          <View style={styles.headerTitleWrap}>
+            <AnimatedMascot variant="shopping" size={40} interactive={true} />
+            <Text style={styles.title} numberOfLines={1}>Activity</Text>
           </View>
-        </View>
 
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <View style={styles.headerActions}>
           {/* RM vs Time Toggle */}
           <View style={styles.toggleWrap}>
             <Pressable
@@ -289,7 +278,17 @@ export default function Transactions() {
           >
             <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
           </Pressable>
+          </View>
         </View>
+        <Text style={styles.subtitle} numberOfLines={2}>
+          {viewMode === "money"
+            ? `Spent ${rm(monthStats.expenses)} · +${rm(monthStats.income)} in`
+            : `${totalExpenseHours.toFixed(1)}h spent · +${totalIncomeHours.toFixed(1)}h freed`}
+          {selectedMonth !== "all" && monthStats.income > 0
+            ? ` · left ${viewMode === "money" ? rm(monthStats.net) : `${amountToWorkHours(monthStats.net, wage.hourlyRate).toFixed(1)}h`}`
+            : ""}
+          {shiftedPayday ? ` · payday ${shortDate(shiftedPayday.date)}` : ""}
+        </Text>
       </View>
 
       {/* Month Navigator Bar */}
@@ -356,9 +355,8 @@ export default function Transactions() {
           <Text
             style={[styles.typeSegmentText, typeFilter === "all" && styles.typeSegmentTextActive]}
             numberOfLines={1}
-            ellipsizeMode="tail"
           >
-            All · {monthTxns.length}
+            All
           </Text>
         </Pressable>
         <Pressable
@@ -374,7 +372,7 @@ export default function Transactions() {
             numberOfLines={1}
             ellipsizeMode="tail"
           >
-            Expenses · {monthExpensesCount}
+            Expenses
           </Text>
         </Pressable>
         <Pressable
@@ -390,7 +388,7 @@ export default function Transactions() {
             numberOfLines={1}
             ellipsizeMode="tail"
           >
-            Income · {monthIncomeCount}
+            Income
           </Text>
         </Pressable>
         <Pressable
@@ -406,7 +404,7 @@ export default function Transactions() {
             numberOfLines={1}
             ellipsizeMode="tail"
           >
-            Transfers · {monthTransfersCount}
+            Transfers
           </Text>
         </Pressable>
       </View>
@@ -557,11 +555,29 @@ export default function Transactions() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface, overflow: "hidden" },
   header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+    gap: 4,
+  },
+  headerTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  headerTitleWrap: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexShrink: 0,
   },
   title: {
     fontWeight: "800",
@@ -628,6 +644,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    flexShrink: 1,
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: radius.pill,
@@ -660,6 +677,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     fontSize: 13,
     color: colors.onSurface,
+    flexShrink: 1,
   },
   typeSegmentWrap: {
     flexDirection: "row",
@@ -673,6 +691,7 @@ const styles = StyleSheet.create({
   },
   typeSegmentBtn: {
     flex: 1,
+    minWidth: 0,
     paddingVertical: 7,
     paddingHorizontal: 2,
     borderRadius: radius.pill,
@@ -697,7 +716,7 @@ const styles = StyleSheet.create({
   },
   typeSegmentText: {
     fontWeight: "700",
-    fontSize: 11.5,
+    fontSize: 12,
     color: colors.onSurfaceSecondary,
   },
   typeSegmentTextActive: {

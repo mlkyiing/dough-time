@@ -5,7 +5,7 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  Platform,
+  ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -198,22 +198,7 @@ export function DatePickerModal({
     onClose();
   };
 
-  // Helper date strings for presets
   const yesterday = yesterdayISO();
-  const threeDaysAgo = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 3);
-    return d.toISOString().slice(0, 10);
-  }, []);
-  const oneWeekAgo = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 7);
-    return d.toISOString().slice(0, 10);
-  }, []);
-  const firstOfMonth = useMemo(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-01`;
-  }, []);
 
   const formatDisplay = (iso: string) => {
     if (!iso) return "";
@@ -238,6 +223,7 @@ export function DatePickerModal({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable style={styles.card} onPress={(e) => e.stopPropagation?.()}>
+          <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerTitleRow}>
@@ -269,34 +255,7 @@ export function DatePickerModal({
                 onPress={() => handleApplyPreset(yesterday)}
               >
                 <Text style={[styles.presetChipText, selected === yesterday && styles.presetChipTextActive]}>
-                  🗓️ Yesterday
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={[styles.presetChip, selected === threeDaysAgo && styles.presetChipActive]}
-                onPress={() => handleApplyPreset(threeDaysAgo)}
-              >
-                <Text style={[styles.presetChipText, selected === threeDaysAgo && styles.presetChipTextActive]}>
-                  ⏪ -3d
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={[styles.presetChip, selected === oneWeekAgo && styles.presetChipActive]}
-                onPress={() => handleApplyPreset(oneWeekAgo)}
-              >
-                <Text style={[styles.presetChipText, selected === oneWeekAgo && styles.presetChipTextActive]}>
-                  📅 -7d
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={[styles.presetChip, selected === firstOfMonth && styles.presetChipActive]}
-                onPress={() => handleApplyPreset(firstOfMonth)}
-              >
-                <Text style={[styles.presetChipText, selected === firstOfMonth && styles.presetChipTextActive]}>
-                  🎯 1st
+                  Yesterday
                 </Text>
               </Pressable>
             </View>
@@ -358,25 +317,29 @@ export function DatePickerModal({
                   key={cell.dateStr + idx}
                   disabled={isDisabled}
                   onPress={() => handleSelectDate(cell.dateStr, cell.isCurrentMonth)}
-                  style={[
-                    styles.dayCell,
-                    isSelected && styles.dayCellSelected,
-                    !isSelected && isToday && styles.dayCellToday,
-                    isDisabled && styles.dayCellDisabled,
-                  ]}
+                  style={styles.dayCell}
                 >
-                  <Text
+                  <View
                     style={[
-                      styles.dayText,
-                      isMuted && styles.dayTextMuted,
-                      isSelected && styles.dayTextSelected,
-                      !isSelected && isToday && styles.dayTextToday,
-                      isDisabled && styles.dayTextDisabled,
+                      styles.dayFace,
+                      isSelected && styles.dayCellSelected,
+                      !isSelected && isToday && styles.dayCellToday,
+                      isDisabled && styles.dayCellDisabled,
                     ]}
                   >
-                    {cell.day}
-                  </Text>
-                  {isToday && !isSelected && <View style={styles.todayDot} />}
+                    <Text
+                      style={[
+                        styles.dayText,
+                        isMuted && styles.dayTextMuted,
+                        isSelected && styles.dayTextSelected,
+                        !isSelected && isToday && styles.dayTextToday,
+                        isDisabled && styles.dayTextDisabled,
+                      ]}
+                    >
+                      {cell.day}
+                    </Text>
+                    {isToday && !isSelected && <View style={styles.todayDot} />}
+                  </View>
                 </Pressable>
               );
             })}
@@ -402,6 +365,7 @@ export function DatePickerModal({
               </Pressable>
             </View>
           </View>
+          </ScrollView>
         </Pressable>
       </Pressable>
     </Modal>
@@ -420,8 +384,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.lg,
     width: "100%",
-    maxWidth: 380,
-    padding: 18,
+    maxWidth: 400,
+    maxHeight: "92%",
+    padding: 16,
     borderWidth: 1,
     borderColor: colors.borderStrong,
     ...shadow.card,
@@ -534,11 +499,10 @@ const styles = StyleSheet.create({
   },
   weekdaysRow: {
     flexDirection: "row",
-    justifyContent: "space-around",
-    marginBottom: 6,
+    marginBottom: 4,
   },
   weekdayCol: {
-    width: 38,
+    width: "14.2857%",
     alignItems: "center",
   },
   weekdayText: {
@@ -552,13 +516,17 @@ const styles = StyleSheet.create({
   gridContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
-    justifyContent: "space-around",
-    rowGap: 6,
   },
   dayCell: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: "14.2857%",
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dayFace: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
     position: "relative",

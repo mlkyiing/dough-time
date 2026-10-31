@@ -15,7 +15,7 @@ import {
   WishlistItem,
   SavingsGoal,
 } from "./types";
-import { rm, todayISO } from "./format";
+import { localISO, rm, todayISO } from "./format";
 
 const K_ACCOUNTS = "dm.accounts.v3";
 const K_TXNS = "dm.transactions.v3";
@@ -516,7 +516,7 @@ export async function upsertAccount(
           accountId: a.id,
           merchant: merchantTitle,
           note: balanceAdjustmentNote?.trim() ? `${balanceAdjustmentNote.trim()} (${autoNote})` : autoNote,
-          date: new Date().toISOString().slice(0, 10),
+          date: todayISO(),
           createdAt: new Date().toISOString(),
         };
 
@@ -534,7 +534,7 @@ export async function upsertAccount(
         accountId: a.id,
         merchant: isDebt ? `${a.name} Initial Debt 🏦` : `${a.name} Opening Balance ⚖️`,
         note: balanceAdjustmentNote?.trim() || `Opening balance recorded for ${a.name}`,
-        date: new Date().toISOString().slice(0, 10),
+        date: todayISO(),
         createdAt: new Date().toISOString(),
       };
       txns.unshift(adjustmentTxn);
@@ -711,7 +711,7 @@ export async function transferFunds(params: {
     category: category || defaultCategory,
     note: defaultNote,
     merchant: toAcc ? toAcc.name : undefined,
-    date: date || new Date().toISOString().slice(0, 10),
+    date: date || todayISO(),
     recurringId,
     bucket,
   });
@@ -852,7 +852,7 @@ export async function seedIfNeeded() {
   await setAccounts(accs, false);
 
   const today = new Date();
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const iso = (d: Date) => localISO(d);
   const day = (n: number) => {
     const d = new Date(today);
     d.setDate(d.getDate() - n);
@@ -912,7 +912,7 @@ export async function setPaydayPlan(plan: PaydayPlan) {
  */
 export async function executePaydayPlan(
   plan: PaydayPlan,
-  executionDate: string = new Date().toISOString().slice(0, 10)
+  executionDate: string = todayISO()
 ): Promise<{ success: boolean; message: string }> {
   if (!plan.sourceAccountId) {
     return { success: false, message: "Source bank account is not selected." };

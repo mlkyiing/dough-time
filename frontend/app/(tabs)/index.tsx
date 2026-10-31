@@ -37,9 +37,10 @@ import { Account, BudgetSettings, isAssetAccount, isLiabilityAccount, SyncSessio
 import {
   amountToWorkHours,
   formatTimeCost,
-  getBobaReaction,
   monthKey,
+  reportMonth,
   rm,
+  shortDate,
   todayISO,
 } from "@/src/format";
 import { SwipeableTxnRow } from "@/src/components/SwipeableTxnRow";
@@ -207,14 +208,19 @@ export default function HomeDashboard() {
 
   const thisMonth = monthKey(todayISO());
   const monthSpending = transactions
-    .filter((t) => monthKey(t.date) === thisMonth && t.type !== "income" && t.type !== "transfer" && t.amount > 0)
+    .filter((t) => reportMonth(t) === thisMonth && t.type !== "income" && t.type !== "transfer" && t.amount > 0)
     .reduce((sum, t) => sum + t.amount, 0);
-  const monthIncome = transactions
-    .filter((t) => monthKey(t.date) === thisMonth && t.type === "income" && t.amount > 0)
+  const monthIn = transactions
+    .filter((t) => reportMonth(t) === thisMonth && t.type === "income" && t.amount > 0)
     .reduce((sum, t) => sum + t.amount, 0);
-
-  const monthWorkHours = amountToWorkHours(monthSpending, wage.hourlyRate);
-  const bobaReaction = getBobaReaction(monthWorkHours);
+  const monthLeft = monthIn - monthSpending;
+  const payday = transactions.find(
+    (t) =>
+      t.type === "income" &&
+      t.category === "Salary" &&
+      reportMonth(t) === thisMonth &&
+      monthKey(t.date) !== thisMonth
+  );
 
   // Segregated Must-Haves vs Guilt-Free Comfort / Nonsense Funds (decoupled from debt obligations)
   const bucketSpending = calculateBucketSpending(transactions, thisMonth, budget);
@@ -222,7 +228,6 @@ export default function HomeDashboard() {
 
   // Budget calculations & Segregated Bucket Analysis
   const budgetLimit = budget.monthlyOverallLimit || 2000;
-  const budgetWorkHours = amountToWorkHours(budgetLimit, wage.hourlyRate);
   const budgetUsedPct = Math.min(100, Math.round((livingSpend / (budgetLimit || 1)) * 100));
   const budgetRemaining = Math.max(0, budgetLimit - livingSpend);
   const budgetRemainingHours = amountToWorkHours(budgetRemaining, wage.hourlyRate);
@@ -234,7 +239,6 @@ export default function HomeDashboard() {
   const comfortUsedPct = Math.min(100, Math.round((bucketSpending.comfortSpent / (comfortLimit || 1)) * 100));
   const comfortRemaining = Math.max(0, comfortLimit - bucketSpending.comfortSpent);
   const comfortRemainingHours = amountToWorkHours(comfortRemaining, wage.hourlyRate);
-  const isComfortOver = bucketSpending.comfortSpent > comfortLimit;
 
   const currentDay = new Date().getDate();
   const upcomingRepayments = accounts.filter((a) => {
@@ -281,9 +285,20 @@ export default function HomeDashboard() {
         {/* Header with Kawaii Animated Mascot */}
         <View style={styles.headerRow}>
           <View style={styles.brandTitleWrap}>
-            <AnimatedMascot variant="default" size={52} interactive={true} />
+            <AnimatedMascot variant="default" size={48} interactive={true} />
             <View>
               <Text style={styles.appTitle}>DoughTime</Text>
+              <Pressable
+                onPress={() => {
+                  Haptics.selectionAsync().catch(() => {});
+                  setWageModalOpen(true);
+                }}
+                hitSlop={8}
+              >
+                <Text style={styles.wageLineText} numberOfLines={1}>
+                  RM {wage.hourlyRate.toFixed(2)} per work hour
+                </Text>
+              </Pressable>
             </View>
           </View>
           <View style={styles.headerRightActions}>
@@ -345,32 +360,7 @@ export default function HomeDashboard() {
           </View>
         </View>
 
-        {/* Wage Profile Banner */}
-        <Pressable
-          style={({ pressed }) => [styles.wagePill, pressed && { opacity: 0.92 }]}
-          onPress={() => {
-            Haptics.selectionAsync().catch(() => {});
-            setWageModalOpen(true);
-          }}
-        >
-          <View style={styles.wagePillLeft}>
-            <View style={styles.wageIconBadge}>
-              <Text style={styles.wagePillEmoji}>⚡</Text>
-            </View>
-            <View style={{ gap: 1 }}>
-              <Text style={styles.wagePillLabel}>Your Hourly Work Worth</Text>
-              <Text style={styles.wagePillValue}>
-                RM {wage.hourlyRate.toFixed(2)}/hr · {wage.hoursPerWeek}h/wk
-              </Text>
-            </View>
-          </View>
-          <View style={styles.wagePillEdit}>
-            <Text style={styles.wagePillEditText}>Edit</Text>
-            <Ionicons name="chevron-forward" size={14} color={colors.brandPrimary} />
-          </View>
-        </Pressable>
-
-        {/* Upcoming Loan / Car Repayment Notification Alert Banner */}
+        {/* Upcoming loan repayment */}
         {upcomingRepayments.map((rep) => (
           <Pressable
             key={rep.id}
@@ -400,8 +390,8 @@ export default function HomeDashboard() {
         {/* Hero Card: Net Worth (Assets - Liabilities) */}
         <View style={styles.heroCard}>
           <View style={styles.heroHeaderRow}>
-            <Text style={styles.heroLabel}>
-              {viewMode === "money" ? "Total Net Worth" : "Total Life Worth (Work Time)"}
+            <Text style={[styles.heroLabel, { flex: 1 }]} numberOfLines={1}>
+              {viewMode === "money" ? "Net worth" : "In work hours"}
             </Text>
             {/* iOS Segmented Toggle */}
             <View style={styles.toggleWrap}>
@@ -453,43 +443,32 @@ export default function HomeDashboard() {
               </View>
             )}
           </View>
+        </View>
 
-          <View style={styles.heroDivider} />
-
-          <View style={styles.heroFooterRow}>
-            <View style={{ gap: 2 }}>
-              <Text style={styles.heroSubLabel}>Spent This Month</Text>
-              <Text style={styles.heroSubValue}>
+        <View style={styles.heroCard}>
+          <View style={styles.reactionRow}>
+            <AnimatedMascot variant="coin" size={46} interactive={true} />
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={styles.heroSubLabel}>
+                {monthIn > 0 ? "Left from this month's pay" : "Spent this month"}
+              </Text>
+              <Text style={styles.heroSubValue} numberOfLines={1}>
                 {viewMode === "money"
-                  ? rm(monthSpending)
-                  : `${formatTimeCost(monthSpending, wage.hourlyRate)} of work`}
+                  ? rm(monthIn > 0 ? monthLeft : monthSpending)
+                  : formatTimeCost(monthIn > 0 ? monthLeft : monthSpending, wage.hourlyRate)}
+              </Text>
+              <Text style={styles.heroSubLabel} numberOfLines={2}>
+                {monthIn > 0
+                  ? `Used ${viewMode === "money" ? rm(monthSpending) : formatTimeCost(monthSpending, wage.hourlyRate)} of ${viewMode === "money" ? rm(monthIn) : formatTimeCost(monthIn, wage.hourlyRate)}${payday ? ` · payday ${shortDate(payday.date)}` : ""}`
+                  : "No salary logged for this month"}
               </Text>
             </View>
-            <Pressable
-              style={({ pressed }) => [styles.addQuickBtn, pressed && { opacity: 0.85 }]}
-              onPress={() => {
-                Haptics.selectionAsync().catch(() => {});
-                router.push("/quick-add");
-              }}
-            >
-              <Ionicons name="add" size={16} color={colors.brandPrimary} />
-              <Text style={styles.addQuickBtnText}>Quick Add</Text>
-            </Pressable>
           </View>
         </View>
 
-        {/* 🎯 Smart Monthly Life Budget Tracker Card */}
         <View style={styles.budgetCard}>
           <View style={styles.budgetHeader}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Text style={{ fontSize: 22 }}>🎯</Text>
-              <View>
-                <Text style={styles.budgetTitle}>Monthly Life Budget</Text>
-                <Text style={styles.budgetSub}>
-                  Cap: {rm(budgetLimit)} ({budgetWorkHours.toFixed(1)} hrs of work)
-                </Text>
-              </View>
-            </View>
+            <Text style={styles.budgetTitle}>🎯 Monthly spending cap</Text>
             <Pressable
               style={styles.budgetEditBtn}
               onPress={() => {
@@ -497,192 +476,71 @@ export default function HomeDashboard() {
                 setBudgetModalOpen(true);
               }}
             >
-              <Text style={styles.budgetEditText}>Configure</Text>
+              <Text style={styles.budgetEditText}>Edit</Text>
             </Pressable>
           </View>
-
-          {/* Overall Progress Bar */}
           <View style={styles.progressBarBg}>
             <View
               style={[
                 styles.progressBarFill,
                 {
                   width: `${Math.min(100, budgetUsedPct)}%`,
-                  backgroundColor: isOverBudget
-                    ? "#EF4444"
-                    : budgetUsedPct > 80
-                    ? "#F59E0B"
-                    : colors.brandPrimary,
+                  backgroundColor: isOverBudget ? "#EF4444" : budgetUsedPct > 80 ? "#F59E0B" : colors.brandPrimary,
                 },
               ]}
             />
           </View>
+          <Text style={[styles.budgetSpentText, { marginTop: 6 }]}>
+            {isOverBudget
+              ? `Over the cap by ${rm(livingSpend - budgetLimit)}`
+              : `Spent ${rm(livingSpend)} of ${rm(budgetLimit)}`}
+          </Text>
 
-          <View style={styles.budgetFooter}>
-            <Text style={styles.budgetPctText}>
-              {isOverBudget
-                ? `⚠️ Over living budget by ${rm(livingSpend - budgetLimit)}`
-                : `${budgetUsedPct}% used (${budgetRemainingHours.toFixed(1)}h work remaining)`}
-            </Text>
-            <Text style={styles.budgetSpentText}>
-              {rm(livingSpend)} / {rm(budgetLimit)}
-            </Text>
-          </View>
-
-          {/* Segregated Sub-Budget Meters: Needs vs Guilt-Free Comfort / Nonsense */}
-          <View style={styles.subBudgetsDivider} />
-          
-          <View style={styles.subBudgetsWrap}>
-            {/* 1. Must-Haves / Needs */}
-            <View style={styles.subBudgetCol}>
-              <View style={styles.subBudgetHead}>
-                <Text style={styles.subBudgetTitle}>🍞 Must-Haves</Text>
-                <Text style={styles.subBudgetVal}>
-                  {rm(bucketSpending.needsSpent)} / {rm(needsLimit)}
-                </Text>
-              </View>
-              <View style={styles.subProgressBg}>
-                <View
-                  style={[
-                    styles.subProgressFill,
-                    {
-                      width: `${needsUsedPct}%`,
-                      backgroundColor: needsUsedPct > 100 ? "#EF4444" : "#3B82F6",
-                    },
-                  ]}
-                />
-              </View>
-              <Text style={styles.subBudgetMeta}>
-                Bills, Petrol, Makan · {Math.max(0, needsLimit - bucketSpending.needsSpent) === 0 ? "Exceeded" : `${rm(Math.max(0, needsLimit - bucketSpending.needsSpent))} left`}
-              </Text>
+          <View style={{ marginTop: 12, gap: 4 }}>
+            <View style={styles.subBudgetHead}>
+              <Text style={styles.subBudgetTitle}>🍞 Must-haves</Text>
+              <Text style={styles.subBudgetVal}>{rm(bucketSpending.needsSpent)} / {rm(needsLimit)}</Text>
             </View>
-
-            {/* 2. Guilt-Free Comfort & "Nonsense" Fund */}
-            <View style={[styles.subBudgetCol, styles.comfortSubBudgetCol]}>
-              <View style={styles.subBudgetHead}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                  <Text style={[styles.subBudgetTitle, { color: "#BE185D" }]}>🎁 Comfort Fund</Text>
-                </View>
-                <Text style={[styles.subBudgetVal, { color: "#BE185D" }]}>
-                  {rm(bucketSpending.comfortSpent)} / {rm(comfortLimit)}
-                </Text>
-              </View>
-              <View style={styles.subProgressBg}>
-                <View
-                  style={[
-                    styles.subProgressFill,
-                    {
-                      width: `${comfortUsedPct}%`,
-                      backgroundColor: isComfortOver ? "#EF4444" : "#EC4899",
-                    },
-                  ]}
-                />
-              </View>
-              <Text style={[styles.subBudgetMeta, { color: isComfortOver ? "#EF4444" : "#9D174D" }]}>
-                {isComfortOver
-                  ? `Over comfort cap by ${rm(bucketSpending.comfortSpent - comfortLimit)}`
-                  : `✨ ${rm(comfortRemaining)} left for treats (${comfortRemainingHours.toFixed(1)}h work)!`}
-              </Text>
+            <View style={styles.subProgressBg}>
+              <View style={[styles.subProgressFill, { width: `${needsUsedPct}%`, backgroundColor: "#3B82F6" }]} />
             </View>
           </View>
-
-          {/* Available to Spend Compact Strip */}
-          <Pressable
-            style={styles.availableSpendStrip}
-            onPress={() => {
-              Haptics.selectionAsync().catch(() => {});
-              setShowWidgetModal(true);
-            }}
-          >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1 }}>
-              <Text style={{ fontSize: 15 }}>🥟</Text>
-              <Text style={styles.availableSpendStripLabel}>Available:</Text>
-              <Text style={styles.availableSpendStripAmount}>{rm(budgetRemaining)}</Text>
-              <Text style={styles.availableSpendStripHours}>({budgetRemainingHours.toFixed(1)}h)</Text>
+          <View style={{ marginTop: 10, gap: 4 }}>
+            <View style={styles.subBudgetHead}>
+              <Text style={[styles.subBudgetTitle, { color: "#BE185D" }]}>🎁 Comfort</Text>
+              <Text style={[styles.subBudgetVal, { color: "#BE185D" }]}>{rm(bucketSpending.comfortSpent)} / {rm(comfortLimit)}</Text>
             </View>
-            <View style={styles.widgetChip}>
-              <Ionicons name="phone-portrait-outline" size={12} color={colors.brandPrimary} />
-              <Text style={styles.widgetChipText}>Widget</Text>
-            </View>
-          </Pressable>
-        </View>
-
-        {/* Mascot Life Energy Reaction Card */}
-        <View style={styles.reactionCard}>
-          <View style={styles.reactionRow}>
-            <AnimatedMascot variant="coin" size={50} interactive={true} />
-            <View style={{ flex: 1, gap: 2 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <Text style={styles.reactionTitle}>{bobaReaction.title}</Text>
-                <Text style={{ fontSize: 15 }}>{bobaReaction.emoji}</Text>
-              </View>
-              <Text style={styles.reactionDesc}>
-                This month you traded <Text style={styles.boldHighlight}>{monthWorkHours.toFixed(1)} hours</Text> of work ({rm(monthSpending)}) for lifestyle expenses.
-              </Text>
+            <View style={styles.subProgressBg}>
+              <View style={[styles.subProgressFill, { width: `${comfortUsedPct}%`, backgroundColor: "#EC4899" }]} />
             </View>
           </View>
         </View>
 
-        {/* DoughTime Power Hub */}
-        <View style={styles.powerHubSection}>
-          <View style={styles.powerHubHeader}>
-            <Text style={styles.powerHubTitle}>⚡ DoughTime Power Hub</Text>
-            <Text style={styles.powerHubSub}>Smart Life-Energy Utilities</Text>
-          </View>
-          <View style={styles.powerHubGrid}>
+        <View style={[styles.powerHubGrid, { marginBottom: spacing.lg }]}>
+          {[
+            { emoji: "⚡", label: "Payday", sub: "Where salary goes", action: () => setShowPaydayModal(true) },
+            { emoji: "⏳", label: "Worth it?", sub: "Hours a buy costs", action: () => setShowSimulatorModal(true) },
+            { emoji: "🔁", label: "Recurring", sub: "Bills that repeat", action: () => setShowRecurringModal(true) },
+            { emoji: "🎁", label: "Wrapped", sub: "This month's story", action: () => setShowWrappedModal(true) },
+          ].map((tool) => (
             <Pressable
+              key={tool.label}
               style={({ pressed }) => [styles.powerTile, pressed && { opacity: 0.85 }]}
               onPress={() => {
-                setShowPaydayModal(true);
                 Haptics.selectionAsync().catch(() => {});
+                tool.action();
               }}
             >
-              <Text style={{ fontSize: 24 }}>⚡</Text>
-              <Text style={styles.powerTileTitle}>Payday Split</Text>
-              <Text style={styles.powerTileSub}>Auto-allocator</Text>
+              <Text style={{ fontSize: 22 }}>{tool.emoji}</Text>
+              <Text style={styles.powerTileTitle}>{tool.label}</Text>
+              <Text style={styles.powerTileSub}>{tool.sub}</Text>
             </Pressable>
-
-            <Pressable
-              style={({ pressed }) => [styles.powerTile, pressed && { opacity: 0.85 }]}
-              onPress={() => {
-                setShowSimulatorModal(true);
-                Haptics.selectionAsync().catch(() => {});
-              }}
-            >
-              <Text style={{ fontSize: 24 }}>⏳</Text>
-              <Text style={styles.powerTileTitle}>Is It Worth It?</Text>
-              <Text style={styles.powerTileSub}>48h chill tank</Text>
-            </Pressable>
-
-            <Pressable
-              style={({ pressed }) => [styles.powerTile, pressed && { opacity: 0.85 }]}
-              onPress={() => {
-                setShowRecurringModal(true);
-                Haptics.selectionAsync().catch(() => {});
-              }}
-            >
-              <Text style={{ fontSize: 24 }}>🔁</Text>
-              <Text style={styles.powerTileTitle}>Recurring</Text>
-              <Text style={styles.powerTileSub}>Bills & subs</Text>
-            </Pressable>
-
-            <Pressable
-              style={({ pressed }) => [styles.powerTile, pressed && { opacity: 0.85 }]}
-              onPress={() => {
-                setShowWrappedModal(true);
-                Haptics.selectionAsync().catch(() => {});
-              }}
-            >
-              <Text style={{ fontSize: 24 }}>🎁</Text>
-              <Text style={styles.powerTileTitle}>Wrapped</Text>
-              <Text style={styles.powerTileSub}>Monthly story</Text>
-            </Pressable>
-          </View>
+          ))}
         </View>
 
         {/* Accounts horizontal scroll */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>My Accounts & Cards</Text>
+          <Text style={styles.sectionTitle}>My accounts</Text>
           <Pressable onPress={() => router.push("/(tabs)/accounts")}>
             <Text style={styles.seeAllText}>Manage</Text>
           </Pressable>
@@ -716,10 +574,7 @@ export default function HomeDashboard() {
 
         {/* Recent Activity with Slide to Delete & Tap for Details */}
         <View style={styles.sectionHeaderRow}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <Text style={styles.sectionTitle}>Recent Activity</Text>
-            <Text style={styles.swipeHint}>(tap for detail · slide to delete)</Text>
-          </View>
+          <Text style={styles.sectionTitle}>Recent activity</Text>
           <Pressable onPress={() => router.push("/(tabs)/transactions")}>
             <Text style={styles.seeAllText}>View All</Text>
           </Pressable>
@@ -901,8 +756,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: spacing.md,
+    gap: 8,
   },
   brandTitleWrap: {
+    flex: 1,
+    minWidth: 0,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
@@ -928,14 +786,37 @@ const styles = StyleSheet.create({
   },
   appTitle: {
     fontWeight: "800",
-    fontSize: 24,
+    fontSize: 22,
     color: colors.onSurface,
     letterSpacing: -0.5,
     marginTop: 1,
   },
+  wageLineText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.brandPrimary,
+  },
+  toolRow: {
+    gap: 8,
+    paddingRight: spacing.md,
+  },
+  toolChip: {
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  toolChipText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.onSurface,
+  },
   headerRightActions: {
     flexDirection: "row",
     alignItems: "center",
+    flexShrink: 0,
     gap: 8,
   },
   cloudSyncBtn: {
@@ -1163,6 +1044,7 @@ const styles = StyleSheet.create({
   addQuickBtn: {
     flexDirection: "row",
     alignItems: "center",
+    flexShrink: 0,
     gap: 4,
     backgroundColor: colors.surfaceTertiary,
     paddingHorizontal: 12,
@@ -1513,7 +1395,8 @@ const styles = StyleSheet.create({
   powerHubGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
+    justifyContent: "space-between",
+    rowGap: 8,
   },
   powerTile: {
     width: "48.5%",

@@ -11,7 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { colors, radius, shadow, spacing } from "@/src/theme";
 import { categoryMeta } from "@/src/constants";
-import { formatTimeCost, rm, shortDate } from "@/src/format";
+import { formatTimeCost, monthKey, reportMonth, rm, shortDate, shortMonth } from "@/src/format";
 import { Account, Transaction } from "@/src/types";
 
 interface Props {
@@ -34,7 +34,7 @@ export function SwipeableTxnRow({
   onDelete,
 }: Props) {
   const meta = categoryMeta(t.category);
-  const timeCost = formatTimeCost(t.amount, hourlyRate);
+  const timeCost = formatTimeCost(t.amount, hourlyRate, { compact: true });
   const pan = useRef(new Animated.Value(0)).current;
   const isSwiped = useRef(false);
 
@@ -102,9 +102,11 @@ export function SwipeableTxnRow({
       : `Transfer: ${acc?.name || "Account"} ➔ ${toAcc?.name || t.merchant || "Account"}`
     : t.merchant || t.category;
 
+  const fundedMonth = reportMonth(t);
+  const fundsNote = fundedMonth !== monthKey(t.date) ? ` · funds ${shortMonth(fundedMonth)}` : "";
   const displaySubtitle = isTransfer
     ? `${shortDate(t.date)} · ${acc?.name || "Source"} ➔ ${toAcc?.name || t.merchant || "Destination"}${t.note ? ` · ${t.note}` : ""}`
-    : `${shortDate(t.date)} · ${acc?.name || "Cash"}${t.note ? ` · ${t.note}` : ""}`;
+    : `${shortDate(t.date)} · ${acc?.name || "Cash"}${fundsNote}${t.note ? ` · ${t.note}` : ""}`;
 
   return (
     <View style={styles.container}>
@@ -155,7 +157,7 @@ export function SwipeableTxnRow({
             </Text>
           </View>
 
-          <View style={{ flex: 1, justifyContent: "center" }}>
+          <View style={{ flex: 1, minWidth: 0, justifyContent: "center" }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
               <Text style={[styles.cardTitle, { flexShrink: 1 }]} numberOfLines={1}>
                 {displayTitle}
@@ -171,8 +173,10 @@ export function SwipeableTxnRow({
             </Text>
           </View>
 
-          <View style={{ alignItems: "flex-end", justifyContent: "center" }}>
+          <View style={{ alignItems: "flex-end", justifyContent: "center", flexShrink: 0, maxWidth: "46%" }}>
             <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
               style={[
                 styles.cardAmt,
                 isIncome && styles.cardAmtIncome,
@@ -191,6 +195,7 @@ export function SwipeableTxnRow({
               ]}
             >
               <Text
+                numberOfLines={1}
                 style={[
                   styles.timePillText,
                   isIncome && styles.timePillTextIncome,

@@ -1,7 +1,7 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { Account, isLiabilityAccount } from "../types";
-import { amountToWorkHours, rm } from "../format";
+import { amountToWorkHours, rm, todayISO } from "../format";
 
 // Configure local notification display behavior
 Notifications.setNotificationHandler({
@@ -247,7 +247,7 @@ export function getDueLoanReminders(
   txns?: { toAccountId?: string; accountId: string; date: string; category?: string }[]
 ): DueLoanInfo[] {
   const today = new Date();
-  const currentMonth = today.toISOString().slice(0, 7);
+  const currentMonth = todayISO().slice(0, 7);
   const currentDay = today.getDate();
   const currentMonthDays = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
 

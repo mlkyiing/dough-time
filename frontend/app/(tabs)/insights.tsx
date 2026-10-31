@@ -24,7 +24,9 @@ import {
   formatTimeCost,
   getBobaReaction,
   monthKey,
+  reportMonth,
   rm,
+  shortDate,
   todayISO,
 } from "@/src/format";
 
@@ -65,7 +67,6 @@ export default function Insights() {
   const [error, setError] = useState<string | null>(null);
   const [showTaxModal, setShowTaxModal] = useState(false);
   const [showWrappedModal, setShowWrappedModal] = useState(false);
-  const currentYear = new Date().getFullYear();
 
   const load = useCallback(async () => {
     const [t, w, b] = await Promise.all([getTransactions(), getWageSettings(), getBudgetSettings()]);
@@ -81,7 +82,10 @@ export default function Insights() {
     const set = new Set<string>();
     set.add(monthKey(todayISO()));
     txns.forEach((t) => {
-      if (t.date) set.add(monthKey(t.date));
+      if (t.date) {
+        set.add(monthKey(t.date));
+        set.add(reportMonth(t));
+      }
     });
     return Array.from(set).sort().reverse();
   }, [txns]);
@@ -106,7 +110,7 @@ export default function Insights() {
   };
 
   const monthTxns = useMemo(
-    () => txns.filter((t) => (selectedMonth === "all" || monthKey(t.date) === selectedMonth) && t.amount > 0),
+    () => txns.filter((t) => (selectedMonth === "all" || reportMonth(t) === selectedMonth) && t.amount > 0),
     [txns, selectedMonth]
   );
 
@@ -125,7 +129,13 @@ export default function Insights() {
     [incomeTxns]
   );
 
-  const totalIncomeHours = amountToWorkHours(totalIncome, wage.hourlyRate);
+  const paydayNote =
+    selectedMonth === "all"
+      ? ""
+      : incomeTxns
+          .filter((t) => t.category === "Salary" && !t.date.startsWith(selectedMonth))
+          .map((t) => `payday ${shortDate(t.date)}`)
+          .join(", ");
 
   const byCat = useMemo(() => {
     const map = new Map<string, number>();
@@ -138,6 +148,7 @@ export default function Insights() {
   }, [expenseTxns]);
 
   const total = byCat.reduce((s, x) => s + x.value, 0);
+  const monthLeft = totalIncome - total;
   const totalWorkHours = amountToWorkHours(total, wage.hourlyRate);
   const bobaReaction = getBobaReaction(totalWorkHours);
 
@@ -245,49 +256,42 @@ export default function Insights() {
 
         {/* Income vs Expenses Summary Banner */}
         <View style={styles.incomeExpenseBanner}>
-          <View style={{ flex: 1, gap: 2 }}>
-            <Text style={styles.ieLabel}>💸 Total Spent</Text>
-            <Text style={styles.ieExpenseVal}>{rm(total)}</Text>
-            <Text style={styles.ieSub}>{totalWorkHours.toFixed(1)} hrs of work</Text>
+          <View style={styles.ieRow}>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={styles.ieLabel}>Spent</Text>
+              <Text style={styles.ieExpenseVal}>{rm(total)}</Text>
+              <Text style={styles.ieSub}>{totalWorkHours.toFixed(1)} hrs of work</Text>
+            </View>
+            <View style={styles.ieDivider} />
+            <View style={{ flex: 1, gap: 2, alignItems: "flex-end" }}>
+              <Text style={styles.ieLabel}>Pay in</Text>
+              <Text style={styles.ieIncomeVal}>+{rm(totalIncome)}</Text>
+              <Text style={styles.ieSub}>left {rm(monthLeft)}</Text>
+            </View>
           </View>
-          <View style={styles.ieDivider} />
-          <View style={{ flex: 1, gap: 2, alignItems: "flex-end" }}>
-            <Text style={styles.ieLabel}>💰 Total Income</Text>
-            <Text style={styles.ieIncomeVal}>+{rm(totalIncome)}</Text>
-            <Text style={styles.ieSub}>+{totalIncomeHours.toFixed(1)} hrs freed 🌿</Text>
-          </View>
+          {paydayNote ? <Text style={styles.iePaydayNote}>{paydayNote} counts in this month</Text> : null}
         </View>
 
-        {/* Malaysian Tax Relief & Monthly Wrapped Utilities */}
-        <View style={styles.insightUtilitiesRow}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} style={{ marginBottom: spacing.md }}>
           <Pressable
-            style={({ pressed }) => [styles.insightUtilBtn, pressed && { opacity: 0.85 }]}
+            style={({ pressed }) => [styles.insightChip, pressed && { opacity: 0.75 }]}
             onPress={() => {
               setShowTaxModal(true);
               Haptics.selectionAsync().catch(() => {});
             }}
           >
-            <Text style={{ fontSize: 16 }}>🇲🇾</Text>
-            <View>
-              <Text style={styles.insightUtilTitle}>LHDN Tax Relief</Text>
-              <Text style={styles.insightUtilSub}>Track {currentYear} quotas</Text>
-            </View>
+            <Text style={styles.insightChipText}>🇲🇾 Tax relief</Text>
           </Pressable>
-
           <Pressable
-            style={({ pressed }) => [styles.insightUtilBtn, pressed && { opacity: 0.85 }]}
+            style={({ pressed }) => [styles.insightChip, pressed && { opacity: 0.75 }]}
             onPress={() => {
               setShowWrappedModal(true);
               Haptics.selectionAsync().catch(() => {});
             }}
           >
-            <Text style={{ fontSize: 16 }}>🎁</Text>
-            <View>
-              <Text style={styles.insightUtilTitle}>Month Wrapped</Text>
-              <Text style={styles.insightUtilSub}>Life energy story</Text>
-            </View>
+            <Text style={styles.insightChipText}>🎁 Wrapped</Text>
           </Pressable>
-        </View>
+        </ScrollView>
 
         {byCat.length === 0 ? (
           <View style={styles.emptyBox}>
@@ -673,7 +677,6 @@ const styles = StyleSheet.create({
     color: colors.onSurface,
   },
   incomeExpenseBanner: {
-    flexDirection: "row",
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.lg,
     padding: spacing.md,
@@ -681,6 +684,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderStrong,
     ...shadow.card,
+  },
+  ieRow: {
+    flexDirection: "row",
   },
   ieLabel: {
     fontWeight: "700",
@@ -702,6 +708,25 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 11,
     color: colors.onSurfaceSecondary,
+  },
+  iePaydayNote: {
+    marginTop: 8,
+    fontWeight: "600",
+    fontSize: 11,
+    color: colors.onSurfaceSecondary,
+  },
+  insightChip: {
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  insightChipText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.onSurface,
   },
   ieDivider: {
     width: 1,

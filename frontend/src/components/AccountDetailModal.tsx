@@ -13,7 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { colors, radius, shadow, spacing } from "@/src/theme";
 import { Account, isAssetAccount, isLiabilityAccount, Transaction } from "@/src/types";
-import { amountToWorkHours, rm, shortDate } from "@/src/format";
+import { amountToWorkHours, rm, shortDate, todayISO } from "@/src/format";
 import { deleteTransaction, getTransactions } from "@/src/store";
 import { categoryMeta } from "@/src/constants";
 
@@ -60,7 +60,7 @@ export function AccountDetailModal({
   const isCard = account?.type === "credit_card";
   const accHours = account ? amountToWorkHours(account.balance, hourlyRate) : 0;
 
-  const currentMonth = useMemo(() => new Date().toISOString().slice(0, 7), []);
+  const currentMonth = useMemo(() => todayISO().slice(0, 7), []);
   const currentMonthName = useMemo(() => new Date().toLocaleString("default", { month: "long" }), []);
 
   // Classify transactions into Inflow vs Outflow relative to this account

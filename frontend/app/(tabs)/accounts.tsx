@@ -38,7 +38,7 @@ import {
 } from "@/src/store";
 import { Account, AccountType, isAssetAccount, isLiabilityAccount, SavingsGoal, SyncSession, SyncStatus, Transaction, WageSettings } from "@/src/types";
 import { ACCOUNT_TEMPLATES, AccountTemplate } from "@/src/constants";
-import { amountToWorkHours, rm } from "@/src/format";
+import { amountToWorkHours, rm, todayISO } from "@/src/format";
 
 type TabFilter = "all" | "bank_ewallet" | "credit_card" | "fd" | "loan";
 
@@ -238,10 +238,6 @@ export default function Accounts() {
   );
 
   const netWorth = totalAssets - totalLiabilities;
-  const netWorthHours =
-    netWorth >= 0
-      ? amountToWorkHours(netWorth, wage.hourlyRate)
-      : -amountToWorkHours(Math.abs(netWorth), wage.hourlyRate);
 
   const filteredAccounts = useMemo(() => {
     if (activeFilter === "all") return accounts;
@@ -336,7 +332,7 @@ export default function Accounts() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.accountName} numberOfLines={1}>{a.name}</Text>
-                <Text style={styles.accountType}>CREDIT CARD</Text>
+                <Text style={styles.accountType}>Credit card · amount owed</Text>
               </View>
             </View>
 
@@ -362,7 +358,7 @@ export default function Accounts() {
           {/* Statement & Outstanding Metric Tiles */}
           <View style={styles.ccMetricsGrid}>
             <View style={styles.ccMetricTile}>
-              <Text style={styles.ccMetricLabel}>STATEMENT DUE</Text>
+              <Text style={styles.ccMetricLabel}>This bill</Text>
               <Text style={[styles.ccMetricVal, isCleared && { color: "#059669" }]}>
                 {isCleared ? "RM 0.00" : rm(statementAmt)}
               </Text>
@@ -374,7 +370,7 @@ export default function Accounts() {
             <View style={styles.ccMetricDivider} />
 
             <View style={styles.ccMetricTile}>
-              <Text style={styles.ccMetricLabel}>NEXT STATEMENT</Text>
+              <Text style={styles.ccMetricLabel}>Not billed yet</Text>
               <Text style={styles.ccMetricVal}>{rm(unbilledAmt)}</Text>
               <Text style={styles.ccMetricSub} numberOfLines={1}>
                 {a.statementCutoffDay ? `Cutoff: ${a.statementCutoffDay}th` : "Unbilled spend"}
@@ -384,9 +380,9 @@ export default function Accounts() {
             <View style={styles.ccMetricDivider} />
 
             <View style={[styles.ccMetricTile, { alignItems: "flex-end" }]}>
-              <Text style={styles.ccMetricLabel}>TOTAL OWED</Text>
+              <Text style={styles.ccMetricLabel}>Still owed</Text>
               <Text style={[styles.ccMetricVal, { color: "#EF4444" }]}>{rm(a.balance)}</Text>
-              <Text style={styles.ccMetricSub} numberOfLines={1}>{accHours.toFixed(1)}h debt</Text>
+              <Text style={styles.ccMetricSub} numberOfLines={1}>{accHours.toFixed(0)}h of work owed</Text>
             </View>
           </View>
 
@@ -465,7 +461,7 @@ export default function Accounts() {
       const principal = a.loanPrincipal || a.balance;
       const paidOffAmt = Math.max(0, principal - a.balance);
       const paidOffPct = principal > 0 ? Math.min(100, Math.round((paidOffAmt / principal) * 100)) : 0;
-      const currentMonth = new Date().toISOString().slice(0, 7);
+      const currentMonth = todayISO().slice(0, 7);
       const currentMonthName = new Date().toLocaleString("default", { month: "long" });
       const isPaidThisMonth =
         a.lastRepaymentMonth === currentMonth ||
@@ -499,14 +495,14 @@ export default function Accounts() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.accountName} numberOfLines={1}>{a.name}</Text>
                 <Text style={styles.accountType}>
-                  {a.loanType ? `${a.loanType.toUpperCase()} LOAN` : "LOAN"} · {a.interestRate || 3.5}% interest
+                  {a.loanType ? `${a.loanType[0].toUpperCase()}${a.loanType.slice(1)} loan` : "Loan"} · {a.interestRate || 3.5}% interest
                 </Text>
               </View>
             </View>
 
             <View style={{ alignItems: "flex-end" }}>
               <Text style={[styles.accountBalance, { color: "#EF4444" }]}>-{rm(a.balance)}</Text>
-              <Text style={styles.accountHours}>{accHours.toFixed(1)}h debt</Text>
+              <Text style={styles.accountHours}>{accHours.toFixed(0)}h of work still owed</Text>
               {isPaidThisMonth ? (
                 <View style={styles.loanPaidBadge}>
                   <Ionicons name="checkmark-circle" size={11} color="#059669" />
@@ -588,7 +584,7 @@ export default function Accounts() {
               <Text style={styles.ccPayBtnText}>
                 {isPaidThisMonth
                   ? "Paid ✓ (Deduct Extra)"
-                  : `Deduct Repayment ${a.monthlyInstallment ? `(${rm(a.monthlyInstallment)})` : ""}`}
+                  : `Pay ${a.monthlyInstallment ? rm(a.monthlyInstallment) : "this month"}`}
               </Text>
             </Pressable>
 
@@ -601,7 +597,7 @@ export default function Accounts() {
               }}
             >
               <Ionicons name="calculator-outline" size={13} color={colors.onSurface} />
-              <Text style={styles.ccTogglePaidText}>Amortization</Text>
+              <Text style={styles.ccTogglePaidText}>Payoff plan</Text>
             </Pressable>
 
             <Pressable
@@ -644,10 +640,16 @@ export default function Accounts() {
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             <Text style={styles.accountType}>
               {a.type === "fd"
-                ? `FIXED DEPOSIT · ${a.interestRate || 3.8}% p.a.`
+                ? `Fixed deposit · ${a.interestRate || 3.8}% a year`
                 : a.type === "investment"
-                ? `INVESTMENT · ${a.interestRate || 4.2}% return`
-                : a.type.toUpperCase()}
+                ? "Investment · money set aside"
+                : a.type === "ewallet"
+                ? "eWallet"
+                : a.type === "bank"
+                ? "Bank account"
+                : a.type === "cash"
+                ? "Cash in hand"
+                : a.type}
             </Text>
           </View>
         </View>
@@ -655,7 +657,7 @@ export default function Accounts() {
         <View style={{ alignItems: "flex-end", gap: 1 }}>
           <Text style={styles.accountBalance}>{rm(a.balance)}</Text>
           <Text style={styles.accountHours}>
-            ⏱️ {accHours.toFixed(1)}h worth
+            ⏱️ {accHours.toFixed(0)}h of work
           </Text>
         </View>
       </Pressable>
@@ -673,39 +675,14 @@ export default function Accounts() {
       <CuteAppBackground />
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerTitleWrap}>
-          <Text style={styles.title} numberOfLines={1}>Accounts</Text>
-          <Text style={styles.subtitle} numberOfLines={1}>
-            Net Worth: <Text style={{ fontWeight: "800", color: netWorth >= 0 ? "#059669" : "#DC2626" }}>{rm(netWorth)}</Text>
-            {` · ${netWorthHours >= 0 ? `+${netWorthHours.toFixed(0)}h saved` : `${Math.abs(netWorthHours).toFixed(0)}h debt`}`}
-          </Text>
-        </View>
-        <View style={styles.headerActions}>
-          <Pressable
-            testID="payday-btn"
-            style={({ pressed }) => [styles.paydayBtn, pressed && { transform: [{ scale: 0.95 }] }]}
-            onPress={() => {
-              Haptics.selectionAsync().catch(() => {});
-              setShowPaydayModal(true);
-            }}
-          >
-            <Ionicons name="flash" size={13} color="#FFFFFF" />
-            <Text style={styles.paydayBtnText}>Payday</Text>
-          </Pressable>
-          <Pressable
-            testID="transfer-btn"
-            style={({ pressed }) => [styles.transferBtn, pressed && { transform: [{ scale: 0.95 }] }]}
-            onPress={() => {
-              Haptics.selectionAsync().catch(() => {});
-              setTransferFromId(undefined);
-              setTransferToId(undefined);
-              setTransferPrefillAmount(undefined);
-              setTransferModalOpen(true);
-            }}
-          >
-            <Ionicons name="swap-horizontal" size={15} color="#FFFFFF" />
-            <Text style={styles.transferBtnText}>Transfer</Text>
-          </Pressable>
+        <View style={styles.headerTop}>
+          <AnimatedMascot variant="default" size={42} interactive={true} />
+          <View style={styles.headerTitleWrap}>
+            <Text style={styles.title} numberOfLines={1}>Accounts</Text>
+            <Text style={styles.subtitle} numberOfLines={2}>
+              Cash you can spend, and what you still owe
+            </Text>
+          </View>
           <Pressable
             testID="add-account-btn"
             style={({ pressed }) => [styles.iconBtn, pressed && { transform: [{ scale: 0.95 }] }]}
@@ -715,6 +692,31 @@ export default function Accounts() {
             }}
           >
             <Ionicons name="add" size={20} color={colors.onBrandPrimary} />
+          </Pressable>
+        </View>
+        <View style={styles.headerActions}>
+          <Pressable
+            testID="payday-btn"
+            style={({ pressed }) => [styles.paydayBtn, pressed && { opacity: 0.85 }]}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              setShowPaydayModal(true);
+            }}
+          >
+            <Text style={styles.paydayBtnText}>⚡ Split payday</Text>
+          </Pressable>
+          <Pressable
+            testID="transfer-btn"
+            style={({ pressed }) => [styles.transferBtn, pressed && { opacity: 0.85 }]}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              setTransferFromId(undefined);
+              setTransferToId(undefined);
+              setTransferPrefillAmount(undefined);
+              setTransferModalOpen(true);
+            }}
+          >
+            <Text style={styles.transferBtnText}>🔁 Move money</Text>
           </Pressable>
         </View>
       </View>
@@ -741,24 +743,23 @@ export default function Accounts() {
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: spacing.md }}>
             <AnimatedMascot variant="rich" size={42} interactive={true} />
             <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: "800", fontSize: 14, color: colors.onSurface }}>DoughTime Vault & Stash 🪙</Text>
+              <Text style={{ fontWeight: "800", fontSize: 14, color: colors.onSurface }}>Your stash 🪙</Text>
               <Text style={{ fontWeight: "600", fontSize: 11, color: colors.onSurfaceSecondary }}>
-                True Net Worth: <Text style={{ color: netWorth >= 0 ? "#059669" : "#DC2626", fontWeight: "800" }}>{rm(netWorth)}</Text>
-                {` (${netWorthHours >= 0 ? `+${netWorthHours.toFixed(1)}h freedom` : `${netWorthHours.toFixed(1)}h debt`})`}
+                What you own, minus what you owe
               </Text>
             </View>
           </View>
           <View style={styles.nwRow}>
             <View style={{ flex: 1, gap: 2 }}>
-              <Text style={styles.nwLabel}>Total Assets</Text>
+              <Text style={styles.nwLabel}>You own</Text>
               <Text style={styles.nwAssetVal}>+{rm(totalAssets)}</Text>
-              <Text style={styles.nwSub}>Bank, eWallets, FD</Text>
+              <Text style={styles.nwSub}>Banks, cash, eWallets</Text>
             </View>
             <View style={styles.nwDivider} />
             <View style={{ flex: 1, gap: 2, alignItems: "flex-end" }}>
-              <Text style={styles.nwLabel}>Liabilities / Debt</Text>
+              <Text style={styles.nwLabel}>You owe</Text>
               <Text style={styles.nwDebtVal}>-{rm(totalLiabilities)}</Text>
-              <Text style={styles.nwSub}>Cards & Loans</Text>
+              <Text style={styles.nwSub}>Cards and loans</Text>
             </View>
           </View>
 
@@ -772,9 +773,7 @@ export default function Accounts() {
             >
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <Text style={{ fontSize: 14 }}>🏔️</Text>
-                <Text style={styles.freedomCtaText}>
-                  Debt-Free Countdown & Snowball Simulator
-                </Text>
+                <Text style={styles.freedomCtaText}>When you’re debt-free</Text>
               </View>
               <Ionicons name="chevron-forward" size={14} color={colors.brandPrimary} />
             </Pressable>
@@ -806,7 +805,7 @@ export default function Accounts() {
             </View>
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                <Text style={styles.utilityTitle} numberOfLines={1}>Cloud Vault</Text>
+                <Text style={styles.utilityTitle} numberOfLines={1}>Backup</Text>
                 <View
                   style={[
                     styles.syncDotSmall,
@@ -822,7 +821,7 @@ export default function Accounts() {
                 />
               </View>
               <Text style={styles.utilitySub} numberOfLines={1}>
-                {syncSession?.syncCode ? syncSession.syncCode : "Synced"}
+                {syncSession?.syncCode ? `Code ${syncSession.syncCode}` : "A copy of these accounts"}
               </Text>
             </View>
           </Pressable>
@@ -839,9 +838,9 @@ export default function Accounts() {
               <Text style={{ fontSize: 13 }}>⚡</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.utilityTitle} numberOfLines={1}>Hourly Wage</Text>
+              <Text style={styles.utilityTitle} numberOfLines={1}>One hour of work</Text>
               <Text style={styles.utilitySub} numberOfLines={1}>
-                RM {wage.hourlyRate.toFixed(2)}/hr
+                Worth RM {wage.hourlyRate.toFixed(2)}
               </Text>
             </View>
           </Pressable>
@@ -888,7 +887,10 @@ export default function Accounts() {
             {liquidAccounts.length > 0 && (
               <View style={styles.accountGroup}>
                 <View style={styles.groupHeaderRow}>
-                  <Text style={styles.groupHeaderTitle}>💰 Spendable Cash & eWallets</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.groupHeaderTitle}>💰 Ready to spend</Text>
+                  <Text style={styles.groupHeaderHint}>Cash and eWallets</Text>
+                </View>
                   <Text style={styles.groupHeaderTotal}>
                     +{rm(liquidAccounts.reduce((s, a) => s + a.balance, 0))}
                   </Text>
@@ -903,7 +905,10 @@ export default function Accounts() {
             {creditCardAccounts.length > 0 && (
               <View style={styles.accountGroup}>
                 <View style={styles.groupHeaderRow}>
-                  <Text style={styles.groupHeaderTitle}>💳 Credit Cards</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.groupHeaderTitle}>💳 Card bills</Text>
+                  <Text style={styles.groupHeaderHint}>Still to pay on these cards</Text>
+                </View>
                   <Text style={[styles.groupHeaderTotal, { color: "#EF4444" }]}>
                     -{rm(creditCardAccounts.reduce((s, a) => s + a.balance, 0))}
                   </Text>
@@ -918,7 +923,10 @@ export default function Accounts() {
             {loanAccounts.length > 0 && (
               <View style={styles.accountGroup}>
                 <View style={styles.groupHeaderRow}>
-                  <Text style={styles.groupHeaderTitle}>🚘 Loans & Commitments</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.groupHeaderTitle}>🚘 Loans</Text>
+                  <Text style={styles.groupHeaderHint}>Installments still left</Text>
+                </View>
                   <Text style={[styles.groupHeaderTotal, { color: "#EF4444" }]}>
                     -{rm(loanAccounts.reduce((s, a) => s + a.balance, 0))}
                   </Text>
@@ -933,7 +941,10 @@ export default function Accounts() {
             {savingsAccounts.length > 0 && (
               <View style={styles.accountGroup}>
                 <View style={styles.groupHeaderRow}>
-                  <Text style={styles.groupHeaderTitle}>📈 Savings, FDs & Stash</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.groupHeaderTitle}>📈 Set aside</Text>
+                  <Text style={styles.groupHeaderHint}>Savings and fixed deposits</Text>
+                </View>
                   <Text style={styles.groupHeaderTotal}>
                     +{rm(savingsAccounts.reduce((s, a) => s + a.balance, 0))}
                   </Text>
@@ -1336,21 +1347,24 @@ const styles = StyleSheet.create({
     alignSelf: "center",
   },
   header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+    gap: 10,
+  },
+  headerTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
   headerTitleWrap: {
     flex: 1,
-    marginRight: spacing.sm,
+    minWidth: 0,
   },
   headerActions: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    flexShrink: 0,
   },
   title: {
     fontWeight: "800",
@@ -1365,12 +1379,14 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   paydayBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 3,
     backgroundColor: "#D97706",
     paddingHorizontal: 9,
-    paddingVertical: 7,
+    paddingVertical: 8,
     borderRadius: radius.pill,
     ...shadow.glow,
   },
@@ -1380,8 +1396,10 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   transferBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 4,
     backgroundColor: colors.brandPrimary,
     paddingHorizontal: 11,
@@ -1926,6 +1944,12 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: colors.onSurface,
     letterSpacing: -0.2,
+  },
+  groupHeaderHint: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.onSurfaceSecondary,
+    marginTop: 1,
   },
   groupHeaderTotal: {
     fontSize: 13,
